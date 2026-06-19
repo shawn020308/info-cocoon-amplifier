@@ -1283,48 +1283,35 @@
     if (!parent) return;
     const btn = document.createElement("span");
     btn.textContent = "🚫 拉黑";
-    btn.title = `将 ${info.uname} 加入黑名单`;
+    btn.title = "将 " + info.uname + " 加入黑名单";
     Object.assign(btn.style, {
       display: "inline-block",
-      marginLeft: "6px",
-      marginTop: "-2px",
-      padding: "0 6px",
-      fontSize: "11px",
-      color: "#aaa",
-      background: "rgba(255,255,255,0.85)",
+      marginBottom: "2px",
+      padding: "0 8px",
+      fontSize: "12px",
+      color: "#999",
+      background: "transparent",
       border: "1px solid #e0e0e0",
-      borderRadius: "9px",
+      borderRadius: "4px",
       cursor: "pointer",
       userSelect: "none",
       fontFamily: "system-ui, -apple-system, sans-serif",
-      lineHeight: "17px",
-      verticalAlign: "middle",
+      lineHeight: "22px",
+      height: "24px",
       transition: "color 0.15s, border-color 0.15s, background 0.15s"
     });
     btn.addEventListener("mouseenter", () => {
       if (btn.dataset.done === "1") return;
-      Object.assign(btn.style, {
-        color: "#d9534f",
-        borderColor: "#d9534f",
-        background: "#fff5f5"
-      });
+      Object.assign(btn.style, { color: "#d9534f", borderColor: "#d9534f", background: "#fff5f5" });
     });
     btn.addEventListener("mouseleave", () => {
       if (btn.dataset.done === "1") return;
-      Object.assign(btn.style, {
-        color: "#aaa",
-        borderColor: "#e0e0e0",
-        background: "rgba(255,255,255,0.85)"
-      });
+      Object.assign(btn.style, { color: "#999", borderColor: "#e0e0e0", background: "transparent" });
     });
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      if (!confirm(
-        `确定要将用户 "${info.uname}" 加入黑名单吗？
-该用户的所有评论将被隐藏。`
-      ))
-        return;
+      if (!confirm('确定要将用户 "' + info.uname + '" 加入黑名单吗？\n该用户的所有评论将被隐藏。')) return;
       try {
         const config = getConfig();
         await addToBlacklist({
@@ -1339,7 +1326,7 @@
           severity: "block",
           source: "manual"
         });
-        console.log(TAG, `🚫 手动拉黑: ${info.uname}`);
+        console.log(TAG, "🚫 手动拉黑: " + info.uname);
         if (config.foldMode) {
           foldEl(el, info, { reason: "[手动拉黑]", severity: "block" });
         } else {
@@ -1347,17 +1334,12 @@
         }
         btn.dataset.done = "1";
         btn.textContent = "✅ 已拉黑";
-        Object.assign(btn.style, {
-          color: "#d9534f",
-          borderColor: "#f5c6cb",
-          background: "#fff0f0",
-          cursor: "default"
-        });
+        Object.assign(btn.style, { color: "#d9534f", borderColor: "#f5c6cb", background: "#fff0f0", cursor: "default" });
       } catch (err) {
         console.error(TAG, "❌ 手动拉黑失败:", err);
       }
     });
-    parent.insertBefore(btn, el.nextSibling);
+    parent.insertBefore(btn, el);
   }
   function extractComment(el) {
     var _a;
