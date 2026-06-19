@@ -13,19 +13,18 @@
 // ==/UserScript==
 
 (function () {
-  "use strict";
+  'use strict';
 
   const DEFAULT_CONFIG = {
     apiKey: "",
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-chat",
-    prompt:
-      "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
+    prompt: "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
     foldMode: true,
     enableAI: true,
     enableBlacklist: true,
     blacklistStrictness: 1,
-    pricePerMToken: 1.1,
+    pricePerMToken: 1.1
   };
   const TAG$2 = "[ruozhi-filter]";
   function buildSystemPrompt(config, ctx) {
@@ -61,7 +60,7 @@
       rpid: r.rpid,
       mid: r.mid,
       uname: r.member.uname,
-      content: r.content.message,
+      content: r.content.message
     }));
     return JSON.stringify(comments, null, 2);
   }
@@ -71,47 +70,36 @@
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(replies);
     const fetchStart = Date.now();
-    const fetcher =
-      typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+    const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
     try {
       const response = await fetcher(config.apiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${config.apiKey}`
         },
         body: JSON.stringify({
           model: config.model,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage },
+            { role: "user", content: userMessage }
           ],
           temperature: 0.1,
           max_tokens: 4096,
-          response_format: { type: "json_object" },
-        }),
+          response_format: { type: "json_object" }
+        })
       });
       console.log(
         TAG$2,
-        `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`,
+        `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`
       );
       if (!response.ok) {
         const errText = await response.text();
-        console.error(
-          TAG$2,
-          `❌ API ${response.status}:`,
-          errText.slice(0, 200),
-        );
+        console.error(TAG$2, `❌ API ${response.status}:`, errText.slice(0, 200));
         throw new Error(`DeepSeek API error ${response.status}`);
       }
       const data = await response.json();
-      const content =
-        (_c =
-          (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null
-            ? void 0
-            : _b.message) == null
-          ? void 0
-          : _c.content;
+      const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
       if (!content) {
         console.warn(TAG$2, "⚠️ AI 返回空内容");
@@ -136,50 +124,42 @@
   }
   async function testAPIConnection(config) {
     try {
-      const fetcher =
-        typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+      const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
       const response = await fetcher(config.apiEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${config.apiKey}`
         },
         body: JSON.stringify({
           model: config.model,
           messages: [{ role: "user", content: "ping" }],
-          max_tokens: 5,
-        }),
+          max_tokens: 5
+        })
       });
       return response.ok;
     } catch {
       return false;
     }
   }
-  const instanceOfAny = (object, constructors) =>
-    constructors.some((c) => object instanceof c);
+  const instanceOfAny = (object, constructors) => constructors.some((c) => object instanceof c);
   let idbProxyableTypes;
   let cursorAdvanceMethods;
   function getIdbProxyableTypes() {
-    return (
-      idbProxyableTypes ||
-      (idbProxyableTypes = [
-        IDBDatabase,
-        IDBObjectStore,
-        IDBIndex,
-        IDBCursor,
-        IDBTransaction,
-      ])
-    );
+    return idbProxyableTypes || (idbProxyableTypes = [
+      IDBDatabase,
+      IDBObjectStore,
+      IDBIndex,
+      IDBCursor,
+      IDBTransaction
+    ]);
   }
   function getCursorAdvanceMethods() {
-    return (
-      cursorAdvanceMethods ||
-      (cursorAdvanceMethods = [
-        IDBCursor.prototype.advance,
-        IDBCursor.prototype.continue,
-        IDBCursor.prototype.continuePrimaryKey,
-      ])
-    );
+    return cursorAdvanceMethods || (cursorAdvanceMethods = [
+      IDBCursor.prototype.advance,
+      IDBCursor.prototype.continue,
+      IDBCursor.prototype.continuePrimaryKey
+    ]);
   }
   const transactionDoneMap = /* @__PURE__ */ new WeakMap();
   const transformCache = /* @__PURE__ */ new WeakMap();
@@ -205,7 +185,8 @@
     return promise;
   }
   function cacheDonePromiseForTransaction(tx) {
-    if (transactionDoneMap.has(tx)) return;
+    if (transactionDoneMap.has(tx))
+      return;
     const done = new Promise((resolve, reject) => {
       const unlisten = () => {
         tx.removeEventListener("complete", complete);
@@ -229,11 +210,10 @@
   let idbProxyTraps = {
     get(target, prop, receiver) {
       if (target instanceof IDBTransaction) {
-        if (prop === "done") return transactionDoneMap.get(target);
+        if (prop === "done")
+          return transactionDoneMap.get(target);
         if (prop === "store") {
-          return receiver.objectStoreNames[1]
-            ? void 0
-            : receiver.objectStore(receiver.objectStoreNames[0]);
+          return receiver.objectStoreNames[1] ? void 0 : receiver.objectStore(receiver.objectStoreNames[0]);
         }
       }
       return wrap(target[prop]);
@@ -243,39 +223,40 @@
       return true;
     },
     has(target, prop) {
-      if (
-        target instanceof IDBTransaction &&
-        (prop === "done" || prop === "store")
-      ) {
+      if (target instanceof IDBTransaction && (prop === "done" || prop === "store")) {
         return true;
       }
       return prop in target;
-    },
+    }
   };
   function replaceTraps(callback) {
     idbProxyTraps = callback(idbProxyTraps);
   }
   function wrapFunction(func) {
     if (getCursorAdvanceMethods().includes(func)) {
-      return function (...args) {
+      return function(...args) {
         func.apply(unwrap(this), args);
         return wrap(this.request);
       };
     }
-    return function (...args) {
+    return function(...args) {
       return wrap(func.apply(unwrap(this), args));
     };
   }
   function transformCachableValue(value) {
-    if (typeof value === "function") return wrapFunction(value);
-    if (value instanceof IDBTransaction) cacheDonePromiseForTransaction(value);
+    if (typeof value === "function")
+      return wrapFunction(value);
+    if (value instanceof IDBTransaction)
+      cacheDonePromiseForTransaction(value);
     if (instanceOfAny(value, getIdbProxyableTypes()))
       return new Proxy(value, idbProxyTraps);
     return value;
   }
   function wrap(value) {
-    if (value instanceof IDBRequest) return promisifyRequest(value);
-    if (transformCache.has(value)) return transformCache.get(value);
+    if (value instanceof IDBRequest)
+      return promisifyRequest(value);
+    if (transformCache.has(value))
+      return transformCache.get(value);
     const newValue = transformCachableValue(value);
     if (newValue !== value) {
       transformCache.set(value, newValue);
@@ -284,93 +265,67 @@
     return newValue;
   }
   const unwrap = (value) => reverseTransformCache.get(value);
-  function openDB(
-    name,
-    version,
-    { blocked, upgrade, blocking, terminated } = {},
-  ) {
+  function openDB(name, version, { blocked, upgrade, blocking, terminated } = {}) {
     const request = indexedDB.open(name, version);
     const openPromise = wrap(request);
     if (upgrade) {
       request.addEventListener("upgradeneeded", (event) => {
-        upgrade(
-          wrap(request.result),
-          event.oldVersion,
-          event.newVersion,
-          wrap(request.transaction),
-          event,
-        );
+        upgrade(wrap(request.result), event.oldVersion, event.newVersion, wrap(request.transaction), event);
       });
     }
     if (blocked) {
-      request.addEventListener("blocked", (event) =>
-        blocked(
-          // Casting due to https://github.com/microsoft/TypeScript-DOM-lib-generator/pull/1405
-          event.oldVersion,
-          event.newVersion,
-          event,
-        ),
-      );
+      request.addEventListener("blocked", (event) => blocked(
+        // Casting due to https://github.com/microsoft/TypeScript-DOM-lib-generator/pull/1405
+        event.oldVersion,
+        event.newVersion,
+        event
+      ));
     }
-    openPromise
-      .then((db) => {
-        if (terminated) db.addEventListener("close", () => terminated());
-        if (blocking) {
-          db.addEventListener("versionchange", (event) =>
-            blocking(event.oldVersion, event.newVersion, event),
-          );
-        }
-      })
-      .catch(() => {});
+    openPromise.then((db) => {
+      if (terminated)
+        db.addEventListener("close", () => terminated());
+      if (blocking) {
+        db.addEventListener("versionchange", (event) => blocking(event.oldVersion, event.newVersion, event));
+      }
+    }).catch(() => {
+    });
     return openPromise;
   }
   const readMethods = ["get", "getKey", "getAll", "getAllKeys", "count"];
   const writeMethods = ["put", "add", "delete", "clear"];
   const cachedMethods = /* @__PURE__ */ new Map();
   function getMethod(target, prop) {
-    if (
-      !(
-        target instanceof IDBDatabase &&
-        !(prop in target) &&
-        typeof prop === "string"
-      )
-    ) {
+    if (!(target instanceof IDBDatabase && !(prop in target) && typeof prop === "string")) {
       return;
     }
-    if (cachedMethods.get(prop)) return cachedMethods.get(prop);
+    if (cachedMethods.get(prop))
+      return cachedMethods.get(prop);
     const targetFuncName = prop.replace(/FromIndex$/, "");
     const useIndex = prop !== targetFuncName;
     const isWrite = writeMethods.includes(targetFuncName);
     if (
       // Bail if the target doesn't exist on the target. Eg, getAll isn't in Edge.
-      !(targetFuncName in (useIndex ? IDBIndex : IDBObjectStore).prototype) ||
-      !(isWrite || readMethods.includes(targetFuncName))
+      !(targetFuncName in (useIndex ? IDBIndex : IDBObjectStore).prototype) || !(isWrite || readMethods.includes(targetFuncName))
     ) {
       return;
     }
-    const method = async function (storeName, ...args) {
-      const tx = this.transaction(
-        storeName,
-        isWrite ? "readwrite" : "readonly",
-      );
+    const method = async function(storeName, ...args) {
+      const tx = this.transaction(storeName, isWrite ? "readwrite" : "readonly");
       let target2 = tx.store;
-      if (useIndex) target2 = target2.index(args.shift());
-      return (
-        await Promise.all([
-          target2[targetFuncName](...args),
-          isWrite && tx.done,
-        ])
-      )[0];
+      if (useIndex)
+        target2 = target2.index(args.shift());
+      return (await Promise.all([
+        target2[targetFuncName](...args),
+        isWrite && tx.done
+      ]))[0];
     };
     cachedMethods.set(prop, method);
     return method;
   }
   replaceTraps((oldTraps) => ({
     ...oldTraps,
-    get: (target, prop, receiver) =>
-      getMethod(target, prop) || oldTraps.get(target, prop, receiver),
-    has: (target, prop) =>
-      !!getMethod(target, prop) || oldTraps.has(target, prop),
+    get: (target, prop, receiver) => getMethod(target, prop) || oldTraps.get(target, prop, receiver),
+    has: (target, prop) => !!getMethod(target, prop) || oldTraps.has(target, prop)
   }));
   const advanceMethodProps = ["continue", "continuePrimaryKey", "advance"];
   const methodMap = {};
@@ -378,25 +333,24 @@
   const ittrProxiedCursorToOriginalProxy = /* @__PURE__ */ new WeakMap();
   const cursorIteratorTraps = {
     get(target, prop) {
-      if (!advanceMethodProps.includes(prop)) return target[prop];
+      if (!advanceMethodProps.includes(prop))
+        return target[prop];
       let cachedFunc = methodMap[prop];
       if (!cachedFunc) {
-        cachedFunc = methodMap[prop] = function (...args) {
-          advanceResults.set(
-            this,
-            ittrProxiedCursorToOriginalProxy.get(this)[prop](...args),
-          );
+        cachedFunc = methodMap[prop] = function(...args) {
+          advanceResults.set(this, ittrProxiedCursorToOriginalProxy.get(this)[prop](...args));
         };
       }
       return cachedFunc;
-    },
+    }
   };
   async function* iterate(...args) {
     let cursor = this;
     if (!(cursor instanceof IDBCursor)) {
       cursor = await cursor.openCursor(...args);
     }
-    if (!cursor) return;
+    if (!cursor)
+      return;
     cursor = cursor;
     const proxiedCursor = new Proxy(cursor, cursorIteratorTraps);
     ittrProxiedCursorToOriginalProxy.set(proxiedCursor, cursor);
@@ -408,24 +362,21 @@
     }
   }
   function isIteratorProp(target, prop) {
-    return (
-      (prop === Symbol.asyncIterator &&
-        instanceOfAny(target, [IDBIndex, IDBObjectStore, IDBCursor])) ||
-      (prop === "iterate" && instanceOfAny(target, [IDBIndex, IDBObjectStore]))
-    );
+    return prop === Symbol.asyncIterator && instanceOfAny(target, [IDBIndex, IDBObjectStore, IDBCursor]) || prop === "iterate" && instanceOfAny(target, [IDBIndex, IDBObjectStore]);
   }
   replaceTraps((oldTraps) => ({
     ...oldTraps,
     get(target, prop, receiver) {
-      if (isIteratorProp(target, prop)) return iterate;
+      if (isIteratorProp(target, prop))
+        return iterate;
       return oldTraps.get(target, prop, receiver);
     },
     has(target, prop) {
       return isIteratorProp(target, prop) || oldTraps.has(target, prop);
-    },
+    }
   }));
   const DB_NAME = "ruozhi-filter-db";
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let dbPromise = null;
   function getDB() {
     if (!dbPromise) {
@@ -443,7 +394,7 @@
               db.deleteObjectStore("blacklist");
             }
             const bl = db.createObjectStore("blacklist", {
-              keyPath: "uid",
+              keyPath: "uid"
             });
             bl.createIndex("timestamp", "timestamp");
             bl.createIndex("severity", "severity");
@@ -452,7 +403,7 @@
             const c = db.createObjectStore("cache", { keyPath: "hash" });
             c.createIndex("timestamp", "timestamp");
           }
-        },
+        }
       });
     }
     return dbPromise;
@@ -460,7 +411,7 @@
   function strHash$1(s) {
     let h = 5381;
     for (let i = 0; i < s.length; i++) {
-      h = ((h << 5) + h + s.charCodeAt(i)) & 2147483647;
+      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
     }
     return h;
   }
@@ -535,15 +486,14 @@
     if (records.length === 0) {
       return `<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>`;
     }
-    const rows = records
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .map((r) => {
-        const date = new Date(r.timestamp).toLocaleString("zh-CN");
-        const uid = r.uid ?? 0;
-        return `
+    const rows = records.sort((a, b) => b.timestamp - a.timestamp).map((r) => {
+      const date = new Date(r.timestamp).toLocaleString("zh-CN");
+      const uid = r.uid ?? 0;
+      const sourceBadge = r.source === "manual" ? '<span style="background:#d9534f;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">手动</span>' : '<span style="background:#667eea;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">AI</span>';
+      return `
       <div style="padding:10px 12px;border-bottom:1px solid #eee;font-size:13px">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>${escapeHtml$1(r.uname)}</strong>
+          <span><strong>${escapeHtml$1(r.uname)}</strong>${sourceBadge}</span>
           <span style="font-size:12px;color:#999">${date}</span>
         </div>
         <div style="color:#666;margin:4px 0">💬 ${escapeHtml$1(r.message.slice(0, 100))}${r.message.length > 100 ? "..." : ""}</div>
@@ -556,8 +506,7 @@
         </div>
         <div style="font-size:11px;color:#bbb;margin-top:2px">📺 ${escapeHtml$1(r.videoTitle)}</div>
       </div>`;
-      })
-      .join("");
+    }).join("");
     return rows;
   }
   let panelVisible = false;
@@ -570,7 +519,8 @@
       if (raw) {
         return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
       }
-    } catch {}
+    } catch {
+    }
     return { ...DEFAULT_CONFIG };
   }
   function saveConfig(config) {
@@ -602,7 +552,7 @@
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: "4px",
+      gap: "4px"
     });
     const badge = document.createElement("div");
     badge.id = "ruozhi-fab-badge";
@@ -618,7 +568,7 @@
       textAlign: "center",
       display: "none",
       lineHeight: "16px",
-      boxShadow: "0 2px 6px rgba(217,83,79,0.3)",
+      boxShadow: "0 2px 6px rgba(217,83,79,0.3)"
     });
     fabBadge = badge;
     const btn = document.createElement("div");
@@ -638,7 +588,7 @@
       cursor: "pointer",
       boxShadow: "0 4px 12px rgba(102,126,234,0.4)",
       transition: "transform 0.2s",
-      userSelect: "none",
+      userSelect: "none"
     });
     btn.addEventListener("mouseenter", () => {
       btn.style.transform = "scale(1.1)";
@@ -646,8 +596,9 @@
     btn.addEventListener("mouseleave", () => {
       btn.style.transform = "scale(1)";
     });
-    btn.addEventListener("click", () =>
-      toggleSettingsPanel(config, onConfigChange),
+    btn.addEventListener(
+      "click",
+      () => toggleSettingsPanel(config, onConfigChange)
     );
     container.appendChild(badge);
     container.appendChild(btn);
@@ -681,7 +632,7 @@
       zIndex: "99998",
       display: "none",
       overflow: "hidden",
-      fontFamily: "system-ui, -apple-system, sans-serif",
+      fontFamily: "system-ui, -apple-system, sans-serif"
     });
     root.innerHTML = buildPanelHTML(config);
     document.body.appendChild(root);
@@ -777,10 +728,7 @@
 </div>`;
   }
   function escapeAttr(s) {
-    return s
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+    return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
   function escapeHtml(s) {
     const div = document.createElement("div");
@@ -800,7 +748,9 @@
         t.style.color = "#667eea";
         t.style.borderBottomColor = "#667eea";
         const tabName = t.dataset.tab;
-        const settingsEl = root.querySelector("#ruozhi-tab-settings");
+        const settingsEl = root.querySelector(
+          "#ruozhi-tab-settings"
+        );
         const statsEl = root.querySelector("#ruozhi-tab-stats");
         const blEl = root.querySelector("#ruozhi-tab-blacklist");
         if (tabName === "settings") {
@@ -824,85 +774,52 @@
         }
       });
     });
-    (_a = root.querySelector("#ruozhi-save")) == null
-      ? void 0
-      : _a.addEventListener("click", () => {
-          var _a2, _b2, _c2, _d2, _e, _f, _g;
-          const newConfig = {
-            ...config,
-            apiKey:
-              ((_a2 = root.querySelector("#ruozhi-apikey")) == null
-                ? void 0
-                : _a2.value) ?? "",
-            apiEndpoint:
-              ((_b2 = root.querySelector("#ruozhi-endpoint")) == null
-                ? void 0
-                : _b2.value) ?? config.apiEndpoint,
-            prompt:
-              ((_c2 = root.querySelector("#ruozhi-prompt")) == null
-                ? void 0
-                : _c2.value) ?? config.prompt,
-            enableAI:
-              ((_d2 = root.querySelector("#ruozhi-enable-ai")) == null
-                ? void 0
-                : _d2.checked) ?? true,
-            foldMode:
-              ((_e = root.querySelector("#ruozhi-fold-mode")) == null
-                ? void 0
-                : _e.checked) ?? true,
-            enableBlacklist:
-              ((_f = root.querySelector("#ruozhi-enable-bl")) == null
-                ? void 0
-                : _f.checked) ?? true,
-            pricePerMToken:
-              parseFloat(
-                ((_g = root.querySelector("#ruozhi-price")) == null
-                  ? void 0
-                  : _g.value) || "1.1",
-              ) || 1.1,
-          };
-          saveConfig(newConfig);
-          onConfigChange(newConfig);
-          showStatus(root, "✅ 设置已保存", "#28a745");
-        });
-    (_b = root.querySelector("#ruozhi-test")) == null
-      ? void 0
-      : _b.addEventListener("click", async () => {
-          var _a2;
-          const apiKey =
-            (_a2 = root.querySelector("#ruozhi-apikey")) == null
-              ? void 0
-              : _a2.value;
-          if (!apiKey) {
-            showStatus(root, "⚠️ 请先填写 API Key", "#ffc107");
-            return;
-          }
-          showStatus(root, "⏳ 正在测试...", "#666");
-          const ok = await testAPIConnection({ ...config, apiKey });
-          showStatus(
-            root,
-            ok ? "✅ 连接成功" : "❌ 连接失败，请检查API Key和地址",
-            ok ? "#28a745" : "#d9534f",
-          );
-        });
-    (_c = root.querySelector("#ruozhi-clear-cache")) == null
-      ? void 0
-      : _c.addEventListener("click", async () => {
-          await clearCache();
-          showStatus(root, "✅ 缓存已清除", "#28a745");
-        });
-    (_d = root.querySelector("#ruozhi-clear-bl")) == null
-      ? void 0
-      : _d.addEventListener("click", async () => {
-          if (!confirm("确定要清空所有黑名单记录吗？此操作不可撤销。")) return;
-          await clearBlacklist();
-          showStatus(root, "✅ 黑名单已清空", "#28a745");
-          const blContent = root.querySelector("#ruozhi-blacklist-content");
-          if (blContent) {
-            blContent.innerHTML =
-              '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
-          }
-        });
+    (_a = root.querySelector("#ruozhi-save")) == null ? void 0 : _a.addEventListener("click", () => {
+      var _a2, _b2, _c2, _d2, _e, _f, _g;
+      const newConfig = {
+        ...config,
+        apiKey: ((_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value) ?? "",
+        apiEndpoint: ((_b2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _b2.value) ?? config.apiEndpoint,
+        prompt: ((_c2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _c2.value) ?? config.prompt,
+        enableAI: ((_d2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _d2.checked) ?? true,
+        foldMode: ((_e = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e.checked) ?? true,
+        enableBlacklist: ((_f = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f.checked) ?? true,
+        pricePerMToken: parseFloat(
+          ((_g = root.querySelector("#ruozhi-price")) == null ? void 0 : _g.value) || "1.1"
+        ) || 1.1
+      };
+      saveConfig(newConfig);
+      onConfigChange(newConfig);
+      showStatus(root, "✅ 设置已保存", "#28a745");
+    });
+    (_b = root.querySelector("#ruozhi-test")) == null ? void 0 : _b.addEventListener("click", async () => {
+      var _a2;
+      const apiKey = (_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value;
+      if (!apiKey) {
+        showStatus(root, "⚠️ 请先填写 API Key", "#ffc107");
+        return;
+      }
+      showStatus(root, "⏳ 正在测试...", "#666");
+      const ok = await testAPIConnection({ ...config, apiKey });
+      showStatus(
+        root,
+        ok ? "✅ 连接成功" : "❌ 连接失败，请检查API Key和地址",
+        ok ? "#28a745" : "#d9534f"
+      );
+    });
+    (_c = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _c.addEventListener("click", async () => {
+      await clearCache();
+      showStatus(root, "✅ 缓存已清除", "#28a745");
+    });
+    (_d = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _d.addEventListener("click", async () => {
+      if (!confirm("确定要清空所有黑名单记录吗？此操作不可撤销。")) return;
+      await clearBlacklist();
+      showStatus(root, "✅ 黑名单已清空", "#28a745");
+      const blContent = root.querySelector("#ruozhi-blacklist-content");
+      if (blContent) {
+        blContent.innerHTML = '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
+      }
+    });
   }
   function showStatus(root, msg, color) {
     const el = root.querySelector("#ruozhi-status");
@@ -920,14 +837,15 @@
     try {
       const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
       price = cfg.pricePerMToken ?? 1.1;
-    } catch {}
-    const costEst = ((s.totalTokens / 1e6) * price).toFixed(4);
+    } catch {
+    }
+    const costEst = (s.totalTokens / 1e6 * price).toFixed(4);
     let sevHTML = "";
     const labels = {
       low: "⚠️ 轻微",
       medium: "🚫 违规",
       high: "⛔ 严重",
-      block: "🛑 拉黑",
+      block: "🛑 拉黑"
     };
     for (const [sev, count] of Object.entries(s.severityCounts).sort()) {
       const label = labels[sev] ?? sev;
@@ -971,8 +889,7 @@
         const uid = parseInt(btn.dataset.uid ?? "0");
         if (uid) {
           await removeFromBlacklist(uid);
-          const contentEl =
-            container.querySelector("#ruozhi-blacklist-content") ?? container;
+          const contentEl = container.querySelector("#ruozhi-blacklist-content") ?? container;
           contentEl.innerHTML = await buildBlacklistPanelHTML();
           bindBlacklistEvents(contentEl);
         }
@@ -991,12 +908,11 @@
         if (blRecord) {
           violations.set(reply.rpid, {
             reason: `[黑名单] ${blRecord.reason}`,
-            severity: blRecord.severity,
+            severity: blRecord.severity
           });
           if (stats) {
             stats.totalFiltered++;
-            stats.severityCounts[blRecord.severity] =
-              (stats.severityCounts[blRecord.severity] ?? 0) + 1;
+            stats.severityCounts[blRecord.severity] = (stats.severityCounts[blRecord.severity] ?? 0) + 1;
           }
           continue;
         }
@@ -1006,12 +922,11 @@
       if (cached && cached.violation) {
         violations.set(reply.rpid, {
           reason: `[缓存] ${cached.reason}`,
-          severity: cached.severity,
+          severity: cached.severity
         });
         if (stats) {
           stats.totalFiltered++;
-          stats.severityCounts[cached.severity] =
-            (stats.severityCounts[cached.severity] ?? 0) + 1;
+          stats.severityCounts[cached.severity] = (stats.severityCounts[cached.severity] ?? 0) + 1;
         }
         continue;
       }
@@ -1037,24 +952,20 @@
               violation: v.violation,
               reason: v.reason,
               severity: v.severity,
-              timestamp: Date.now(),
+              timestamp: Date.now()
             });
           }
           if (v.violation) {
             violations.set(v.rpid, {
               reason: v.reason,
-              severity: v.severity,
+              severity: v.severity
             });
             if (stats) {
               stats.totalFiltered++;
-              stats.severityCounts[v.severity] =
-                (stats.severityCounts[v.severity] ?? 0) + 1;
+              stats.severityCounts[v.severity] = (stats.severityCounts[v.severity] ?? 0) + 1;
             }
             if ((v.severity === "block" || v.severity === "high") && reply) {
-              console.log(
-                TAG$1,
-                `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`,
-              );
+              console.log(TAG$1, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
               await addToBlacklist({
                 mid: v.mid,
                 uname: reply.member.uname,
@@ -1065,6 +976,7 @@
                 videoUrl: window.location.href,
                 timestamp: Date.now(),
                 severity: v.severity,
+                source: "auto"
               });
               newBlacklistEntries++;
             }
@@ -1088,12 +1000,13 @@
     promptTokens: 0,
     completionTokens: 0,
     severityCounts: {},
-    lastUpdate: 0,
+    lastUpdate: 0
   };
   if (typeof window !== "undefined") {
     window.__ruozhi_stats = ruozhiStats;
   }
-  let updateStats = () => {};
+  let updateStats = () => {
+  };
   function setUpdateStats(fn) {
     updateStats = fn;
   }
@@ -1102,7 +1015,8 @@
     try {
       const raw = GM_getValue("ruozhi-config", "");
       if (raw) return JSON.parse(raw);
-    } catch {}
+    } catch {
+    }
     return {
       apiKey: "",
       apiEndpoint: "https://api.deepseek.com/chat/completions",
@@ -1112,7 +1026,7 @@
       enableAI: true,
       enableBlacklist: true,
       blacklistStrictness: 1,
-      pricePerMToken: 1.1,
+      pricePerMToken: 1.1
     };
   };
   function refreshConfig(cfg) {
@@ -1125,22 +1039,11 @@
   }
   function extractVideoInfo() {
     var _a, _b, _c, _d;
-    const titleEl =
-      document.querySelector("h1.video-title") ??
-      document.querySelector(".video-info-title .tit") ??
-      document.querySelector("[data-title]");
+    const titleEl = document.querySelector("h1.video-title") ?? document.querySelector(".video-info-title .tit") ?? document.querySelector("[data-title]");
     if (titleEl) {
-      currentContext.videoTitle =
-        ((_a = titleEl.dataset) == null ? void 0 : _a.title) ??
-        titleEl.getAttribute("data-title") ??
-        titleEl.getAttribute("title") ??
-        ((_b = titleEl.textContent) == null ? void 0 : _b.trim()) ??
-        "";
+      currentContext.videoTitle = ((_a = titleEl.dataset) == null ? void 0 : _a.title) ?? titleEl.getAttribute("data-title") ?? titleEl.getAttribute("title") ?? ((_b = titleEl.textContent) == null ? void 0 : _b.trim()) ?? "";
     }
-    const descEl =
-      document.querySelector("#v_desc .desc-info-text") ??
-      document.querySelector(".desc-info-text") ??
-      document.querySelector(".basic-desc-info");
+    const descEl = document.querySelector("#v_desc .desc-info-text") ?? document.querySelector(".desc-info-text") ?? document.querySelector(".basic-desc-info");
     if (descEl) {
       const t = ((_c = descEl.textContent) == null ? void 0 : _c.trim()) ?? "";
       currentContext.videoDesc = t === "-" ? "" : t;
@@ -1157,21 +1060,19 @@
       try {
         for (const s of document.querySelectorAll("script")) {
           const m = (s.textContent ?? "").match(
-            /window\.__INITIAL_STATE__\s*=\s*(\{.+?\});/,
+            /window\.__INITIAL_STATE__\s*=\s*(\{.+?\});/
           );
           if (m) {
             const data = JSON.parse(m[1]);
-            const aid =
-              ((_d = data == null ? void 0 : data.videoData) == null
-                ? void 0
-                : _d.aid) ?? (data == null ? void 0 : data.aid);
+            const aid = ((_d = data == null ? void 0 : data.videoData) == null ? void 0 : _d.aid) ?? (data == null ? void 0 : data.aid);
             if (aid) {
               currentContext.oid = aid;
               break;
             }
           }
         }
-      } catch {}
+      } catch {
+      }
     }
     if (!currentContext.oid) {
       location.pathname.match(/\/video\/(BV\w+)/);
@@ -1183,7 +1084,7 @@
     const bc = document.querySelector("bili-comments");
     console.log(
       TAG,
-      `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`,
+      `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`
     );
     const containerSelectors = [
       "#comment",
@@ -1194,19 +1095,17 @@
       "[class*='comment']",
       "[class*='reply']",
       "[id*='comment']",
-      "[id*='reply']",
+      "[id*='reply']"
     ];
     for (const sel of containerSelectors) {
       const els = document.querySelectorAll(sel);
       if (els.length > 0 && els.length < 200) {
         const first = els[0];
         const id = first.id ? `#${first.id}` : "(无id)";
-        const cls = first.className
-          ? "." + first.className.split(" ").slice(0, 3).join(".")
-          : "(无class)";
+        const cls = first.className ? "." + first.className.split(" ").slice(0, 3).join(".") : "(无class)";
         console.log(
           TAG,
-          `  📌 "${sel}" → ${els.length}个 ${first.tagName.toLowerCase()}${id}${cls}`,
+          `  📌 "${sel}" → ${els.length}个 ${first.tagName.toLowerCase()}${id}${cls}`
         );
       }
     }
@@ -1221,7 +1120,7 @@
       });
       console.log(
         TAG,
-        `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`,
+        `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`
       );
       const itemChecks = [
         "[data-rpid]",
@@ -1229,7 +1128,7 @@
         ".comment-item",
         ".reply-wrap",
         ".con",
-        "bb-comment",
+        "bb-comment"
       ];
       for (const sel of itemChecks) {
         const count = sr.querySelectorAll(sel).length;
@@ -1239,35 +1138,23 @@
       for (const child of sr.children) {
         const tag = child.tagName.toLowerCase();
         const id = child.id ? `#${child.id}` : "";
-        const cls = child.className
-          ? "." + child.className.split(" ").slice(0, 3).join(".")
-          : "";
-        const text =
-          ((_a = child.innerText) == null ? void 0 : _a.slice(0, 60)) ?? "";
+        const cls = child.className ? "." + child.className.split(" ").slice(0, 3).join(".") : "";
+        const text = ((_a = child.innerText) == null ? void 0 : _a.slice(0, 60)) ?? "";
         const childCount = child.querySelectorAll("*").length;
         console.log(
           TAG,
-          `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`,
+          `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`
         );
         if (childCount > 0 && childCount <= 30) {
           for (const c2 of child.children) {
             const t2 = c2.tagName.toLowerCase();
             const id2 = c2.id ? `#${c2.id}` : "";
-            const cls2 = c2.className
-              ? "." + c2.className.split(" ").slice(0, 2).join(".")
-              : "";
-            const txt2 =
-              ((_b = c2.innerText) == null ? void 0 : _b.slice(0, 50)) ?? "";
-            const dataAttrs =
-              c2 instanceof HTMLElement
-                ? c2
-                    .getAttributeNames()
-                    .filter((a) => a.startsWith("data-"))
-                    .join(", ")
-                : "";
+            const cls2 = c2.className ? "." + c2.className.split(" ").slice(0, 2).join(".") : "";
+            const txt2 = ((_b = c2.innerText) == null ? void 0 : _b.slice(0, 50)) ?? "";
+            const dataAttrs = c2 instanceof HTMLElement ? c2.getAttributeNames().filter((a) => a.startsWith("data-")).join(", ") : "";
             console.log(
               TAG,
-              `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`,
+              `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`
             );
           }
         }
@@ -1279,7 +1166,7 @@
       ".player-auxiliary",
       ".video-info-container",
       ".video-data",
-      "section",
+      "section"
     ];
     console.log(TAG, "📐 页面结构:");
     for (const sel of mainSections) {
@@ -1304,29 +1191,14 @@
       const indent = "  ".repeat(depth);
       const tag = el.tagName.toLowerCase();
       const id = el.id ? `#${el.id}` : "";
-      const cls = el.className
-        ? "." + el.className.split(" ").slice(0, 3).join(".")
-        : "";
-      const attrs =
-        el instanceof HTMLElement
-          ? el
-              .getAttributeNames()
-              .filter((a) => a !== "class" && a !== "id")
-              .map((a) => `${a}="${el.getAttribute(a)}"`.slice(0, 60))
-              .join(" ")
-          : "";
-      const text =
-        ((_b = (_a = el.innerText) == null ? void 0 : _a.slice(0, 80)) == null
-          ? void 0
-          : _b.replace(/\n/g, " ")) ?? "";
+      const cls = el.className ? "." + el.className.split(" ").slice(0, 3).join(".") : "";
+      const attrs = el instanceof HTMLElement ? el.getAttributeNames().filter((a) => a !== "class" && a !== "id").map((a) => `${a}="${el.getAttribute(a)}"`.slice(0, 60)).join(" ") : "";
+      const text = ((_b = (_a = el.innerText) == null ? void 0 : _a.slice(0, 80)) == null ? void 0 : _b.replace(/\n/g, " ")) ?? "";
       console.log(TAG, `${indent}<${tag}${id}${cls}> ${attrs} "${text}"`);
       if (el.children.length <= 4) {
         for (const c of el.children) dump(c, depth + 1);
       } else if (depth < 3) {
-        console.log(
-          TAG,
-          `${indent}  ... ${el.children.length}个子元素，取前4个`,
-        );
+        console.log(TAG, `${indent}  ... ${el.children.length}个子元素，取前4个`);
         for (let i = 0; i < Math.min(4, el.children.length); i++) {
           dump(el.children[i], depth + 1);
         }
@@ -1349,7 +1221,7 @@
       "#commentapp",
       ".comment-container",
       ".reply-list",
-      ".bb-comment",
+      ".bb-comment"
     ];
     for (const sel of containerSelectors) {
       const el = document.querySelector(sel);
@@ -1364,7 +1236,7 @@
     items = root.querySelectorAll("[data-rpid]");
     if (items.length > 0) return items;
     items = root.querySelectorAll(
-      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment",
+      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment"
     );
     if (items.length > 0) return items;
     const divs = root.querySelectorAll("div");
@@ -1396,58 +1268,148 @@
       const config = getConfig();
       if (!config.enableAI && !config.enableBlacklist) return;
       pendingBatch.push(info);
+      injectManualBlacklistButton(el, info);
     });
     if (found > 0) {
       if (pendingBatch.length >= 20) flushBatch();
       else if (!batchTimer) batchTimer = setTimeout(flushBatch, 800);
     }
   }
+  const blacklistButtonInjected = /* @__PURE__ */ new WeakSet();
+  function ensureManualBlacklistStyles() {
+    if (document.getElementById("ruozhi-bl-style")) return;
+    const style = document.createElement("style");
+    style.id = "ruozhi-bl-style";
+    style.textContent = `
+.ruozhi-manual-bl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #999;
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.ruozhi-manual-bl-btn:hover {
+  color: #d9534f;
+  border-color: #d9534f;
+  background: #fff5f5;
+}
+.ruozhi-manual-bl-btn:active {
+  transform: scale(0.95);
+}
+.ruozhi-manual-bl-btn.ruozhi-bl-done {
+  color: #d9534f;
+  border-color: #d9534f;
+  background: #fff0f0;
+  cursor: default;
+  pointer-events: none;
+}
+`;
+    document.head.appendChild(style);
+  }
+  function injectManualBlacklistButton(el, info) {
+    if (blacklistButtonInjected.has(el)) return;
+    blacklistButtonInjected.add(el);
+    ensureManualBlacklistStyles();
+    const btn = document.createElement("button");
+    btn.className = "ruozhi-manual-bl-btn";
+    btn.innerHTML = "🚫 拉黑";
+    btn.title = `将 ${info.uname} 加入黑名单`;
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!confirm(
+        `确定要将用户 "${info.uname}" 加入黑名单吗？
+该用户的所有评论将被隐藏。`
+      )) {
+        return;
+      }
+      try {
+        const config = getConfig();
+        await addToBlacklist({
+          mid: info.mid,
+          uname: info.uname,
+          rpid: info.rpid,
+          message: info.message,
+          reason: "[手动拉黑]",
+          videoTitle: currentContext.videoTitle,
+          videoUrl: window.location.href,
+          timestamp: Date.now(),
+          severity: "block",
+          source: "manual"
+        });
+        console.log(TAG, `🚫 手动拉黑: ${info.uname}`);
+        if (config.foldMode) {
+          foldEl(el, info, {
+            reason: "[手动拉黑]",
+            severity: "block"
+          });
+        } else {
+          hideEl(el);
+        }
+        btn.classList.add("ruozhi-bl-done");
+        btn.innerHTML = "✅ 已拉黑";
+      } catch (err) {
+        console.error(TAG, "❌ 手动拉黑失败:", err);
+      }
+    });
+    const parent = el.parentNode;
+    if (parent) {
+      parent.insertBefore(btn, el.nextSibling);
+    }
+  }
   function extractComment(el) {
     var _a;
     try {
-      let deepInnerText = function (root) {
-          var _a2;
-          let text = "";
-          for (const child of root.children) {
-            const el2 = child;
-            const tag2 = el2.tagName.toLowerCase();
-            if (tag2 === "style") continue;
-            if (el2.shadowRoot) {
-              text += deepInnerText(el2.shadowRoot) + "\n";
-            } else if (el2.children.length > 0) {
-              text += deepInnerText(el2) + "\n";
-            } else {
-              const t = (_a2 = el2.innerText) == null ? void 0 : _a2.trim();
-              if (t) text += t + "\n";
-            }
+      let deepInnerText = function(root) {
+        var _a2;
+        let text = "";
+        for (const child of root.children) {
+          const el2 = child;
+          const tag2 = el2.tagName.toLowerCase();
+          if (tag2 === "style") continue;
+          if (el2.shadowRoot) {
+            text += deepInnerText(el2.shadowRoot) + "\n";
+          } else if (el2.children.length > 0) {
+            text += deepInnerText(el2) + "\n";
+          } else {
+            const t = (_a2 = el2.innerText) == null ? void 0 : _a2.trim();
+            if (t) text += t + "\n";
           }
-          return text;
-        },
-        findRpid = function (root) {
-          const el2 = root.querySelector("[data-rpid]");
-          if (el2) return el2.getAttribute("data-rpid");
-          for (const child of root.children) {
-            const c = child;
-            if (c.shadowRoot) {
-              const r = findRpid(c.shadowRoot);
-              if (r) return r;
-            }
+        }
+        return text;
+      }, findRpid = function(root) {
+        const el2 = root.querySelector("[data-rpid]");
+        if (el2) return el2.getAttribute("data-rpid");
+        for (const child of root.children) {
+          const c = child;
+          if (c.shadowRoot) {
+            const r = findRpid(c.shadowRoot);
+            if (r) return r;
           }
-          return null;
-        },
-        findMid = function (root) {
-          const el2 = root.querySelector("[data-mid], [data-uid]");
-          if (el2)
-            return el2.getAttribute("data-mid") ?? el2.getAttribute("data-uid");
-          for (const child of root.children) {
-            const c = child;
-            if (c.shadowRoot) {
-              const r = findMid(c.shadowRoot);
-              if (r) return r;
-            }
+        }
+        return null;
+      }, findMid = function(root) {
+        const el2 = root.querySelector("[data-mid], [data-uid]");
+        if (el2) return el2.getAttribute("data-mid") ?? el2.getAttribute("data-uid");
+        for (const child of root.children) {
+          const c = child;
+          if (c.shadowRoot) {
+            const r = findMid(c.shadowRoot);
+            if (r) return r;
           }
-          return null;
-        };
+        }
+        return null;
+      };
       const tag = el.tagName.toLowerCase();
       let fullText = "";
       if (el.shadowRoot) {
@@ -1458,44 +1420,27 @@
       }
       if (fullText.length < 3) return null;
       let rpid = 0;
-      const rpidStr =
-        el.getAttribute("data-rpid") ??
-        (el.shadowRoot ? findRpid(el.shadowRoot) : null);
+      const rpidStr = el.getAttribute("data-rpid") ?? (el.shadowRoot ? findRpid(el.shadowRoot) : null);
       if (rpidStr) rpid = parseInt(rpidStr);
       if (!rpid) {
         const hashInput = `${tag}:${fullText.slice(0, 300)}`;
         rpid = strHash(hashInput);
       }
       let mid = 0;
-      const midStr =
-        el.getAttribute("data-mid") ??
-        el.getAttribute("data-uid") ??
-        (el.shadowRoot ? findMid(el.shadowRoot) : null);
+      const midStr = el.getAttribute("data-mid") ?? el.getAttribute("data-uid") ?? (el.shadowRoot ? findMid(el.shadowRoot) : null);
       if (midStr) mid = parseInt(midStr) || 0;
-      const lines = fullText
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
+      const lines = fullText.split("\n").map((l) => l.trim()).filter(Boolean);
       const contentLines = lines.filter((l) => {
         if (IGNORE_TEXTS.has(l)) return false;
         if (isUIText(l)) return false;
         return true;
       });
       if (contentLines.length === 0) return null;
-      const uname =
-        contentLines.find(
-          (l) =>
-            l.length >= 2 &&
-            l.length <= 20 &&
-            !/^\d/.test(l) &&
-            !l.includes("·") &&
-            !l.includes("分钟") &&
-            !l.includes("小时") &&
-            !l.includes("刚刚") &&
-            !l.includes("昨天"),
-        ) ?? "未知用户";
+      const uname = contentLines.find(
+        (l) => l.length >= 2 && l.length <= 20 && !/^\d/.test(l) && !l.includes("·") && !l.includes("分钟") && !l.includes("小时") && !l.includes("刚刚") && !l.includes("昨天")
+      ) ?? "未知用户";
       const msgParts = contentLines.filter(
-        (l) => l !== uname || contentLines.filter((x) => x === l).length > 1,
+        (l) => l !== uname || contentLines.filter((x) => x === l).length > 1
       );
       let message = msgParts.join(" ");
       if (uname !== "未知用户" && message.startsWith(uname)) {
@@ -1529,7 +1474,7 @@
     "已关注",
     "复制评论链接",
     "加入黑名单",
-    "记笔记",
+    "记笔记"
   ]);
   function isUIText(s) {
     if (/^(\d+|[\d.]+[万亿]?|\d+:\d+|\d+楼|#\d+)$/.test(s)) return true;
@@ -1540,7 +1485,7 @@
   function strHash(s) {
     let h = 5381;
     for (let i = 0; i < s.length; i++) {
-      h = ((h << 5) + h + s.charCodeAt(i)) & 2147483647;
+      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
     }
     return h;
   }
@@ -1567,14 +1512,14 @@
       like: 0,
       ctime: 0,
       content: { message: p.message },
-      member: { mid: String(p.mid), uname: p.uname, avatar: "" },
+      member: { mid: String(p.mid), uname: p.uname, avatar: "" }
     }));
     try {
       const result = await filterReplies(
         config,
         replies,
         currentContext,
-        ruozhiStats,
+        ruozhiStats
       );
       if (result.violations.size > 0) {
         console.log(TAG, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
@@ -1586,11 +1531,13 @@
         }
         try {
           updateStats(ruozhiStats);
-        } catch {}
+        } catch {
+        }
       } else {
         try {
           updateStats(ruozhiStats);
-        } catch {}
+        } catch {
+        }
       }
     } catch (err) {
       console.error(TAG, "❌ AI失败:", err);
@@ -1605,7 +1552,7 @@
         low: "⚠️ 轻微不适",
         medium: "🚫 违规言论",
         high: "⛔ 严重违规",
-        block: "🛑 永久拉黑",
+        block: "🛑 永久拉黑"
       };
       const label = labelMap[verdict.severity] ?? "🚫 已过滤";
       const html = `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
@@ -1660,7 +1607,7 @@
     });
     observer.observe(root, {
       childList: true,
-      subtree: true,
+      subtree: true
     });
     console.log(TAG, "👁️ MutationObserver 已绑定到评论根节点");
   }
@@ -1675,7 +1622,7 @@
           if (pendingBatch.length >= 10) flushBatch();
         }, 600);
       },
-      { passive: true },
+      { passive: true }
     );
   }
   function startDOMScanner() {
@@ -1707,12 +1654,12 @@
     if (titleEl) {
       new MutationObserver(() => {
         updateContext({
-          videoTitle: document.title.replace(/[ _-]哔哩哔哩.*$/, ""),
+          videoTitle: document.title.replace(/[ _-]哔哩哔哩.*$/, "")
         });
       }).observe(titleEl, {
         childList: true,
         characterData: true,
-        subtree: true,
+        subtree: true
       });
     }
     injectUI(config, (newConfig) => {
@@ -1724,12 +1671,14 @@
     });
     setInterval(
       () => {
-        pruneCache().catch(() => {});
+        pruneCache().catch(() => {
+        });
       },
-      60 * 60 * 1e3,
+      60 * 60 * 1e3
     );
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", main);
   else main();
+
 })();

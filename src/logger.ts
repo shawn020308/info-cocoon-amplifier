@@ -64,10 +64,14 @@ export async function buildBlacklistPanelHTML(): Promise<string> {
     .map((r) => {
       const date = new Date(r.timestamp).toLocaleString("zh-CN");
       const uid = r.uid ?? 0;
+      const sourceBadge =
+        r.source === "manual"
+          ? '<span style="background:#d9534f;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">手动</span>'
+          : '<span style="background:#667eea;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">AI</span>';
       return `
       <div style="padding:10px 12px;border-bottom:1px solid #eee;font-size:13px">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>${escapeHtml(r.uname)}</strong>
+          <span><strong>${escapeHtml(r.uname)}</strong>${sourceBadge}</span>
           <span style="font-size:12px;color:#999">${date}</span>
         </div>
         <div style="color:#666;margin:4px 0">💬 ${escapeHtml(r.message.slice(0, 100))}${r.message.length > 100 ? "..." : ""}</div>

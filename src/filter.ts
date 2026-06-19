@@ -129,6 +129,7 @@ export async function filterReplies(
               videoUrl: window.location.href,
               timestamp: Date.now(),
               severity: v.severity,
+              source: "auto",
             });
             newBlacklistEntries++;
           }

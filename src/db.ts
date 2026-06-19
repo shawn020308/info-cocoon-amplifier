@@ -5,7 +5,7 @@ import { openDB, type IDBPDatabase } from "idb";
 import type { BlacklistRecord, CacheEntry } from "./types";
 
 const DB_NAME = "ruozhi-filter-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -30,6 +30,10 @@ function getDB(): Promise<IDBPDatabase> {
           });
           bl.createIndex("timestamp", "timestamp");
           bl.createIndex("severity", "severity");
+        }
+        if (oldVersion < 3) {
+          // v3: 添加 source 字段 (manual/auto)，旧数据默认为 auto
+          // 新字段自动兼容，无需重建store
         }
         if (!db.objectStoreNames.contains("cache")) {
           const c = db.createObjectStore("cache", { keyPath: "hash" });

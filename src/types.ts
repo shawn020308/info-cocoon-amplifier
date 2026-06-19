@@ -108,6 +108,8 @@ export interface BlacklistRecord {
   videoUrl: string;
   timestamp: number;
   severity: AIVerdict["severity"];
+  /** 来源: auto=AI自动, manual=用户手动 */
+  source: "auto" | "manual";
 }
 
 /** 评论缓存条目 (LRU) */

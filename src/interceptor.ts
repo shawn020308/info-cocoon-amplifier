@@ -7,8 +7,10 @@ import type {
   ReplyContext,
   AIVerdict,
   AccumulatedStats,
+  BlacklistRecord,
 } from "./types";
 import { filterReplies } from "./filter";
+import { addToBlacklist, blacklistKey } from "./db";
 
 const TAG = "[ruozhi-filter]";
 
@@ -401,11 +403,129 @@ function scanPage(): void {
     const config = getConfig();
     if (!config.enableAI && !config.enableBlacklist) return;
     pendingBatch.push(info);
+
+    // 注入手动拉黑按钮
+    injectManualBlacklistButton(el, info);
   });
 
   if (found > 0) {
     if (pendingBatch.length >= 20) flushBatch();
     else if (!batchTimer) batchTimer = setTimeout(flushBatch, 800);
+  }
+}
+
+// ────────── 手动拉黑功能 ──────────
+
+/** 已注入拉黑按钮的元素集合（避免重复注入） */
+const blacklistButtonInjected = new WeakSet<Element>();
+
+/** 注入样式 */
+function ensureManualBlacklistStyles(): void {
+  if (document.getElementById("ruozhi-bl-style")) return;
+  const style = document.createElement("style");
+  style.id = "ruozhi-bl-style";
+  style.textContent = `
+.ruozhi-manual-bl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #999;
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.ruozhi-manual-bl-btn:hover {
+  color: #d9534f;
+  border-color: #d9534f;
+  background: #fff5f5;
+}
+.ruozhi-manual-bl-btn:active {
+  transform: scale(0.95);
+}
+.ruozhi-manual-bl-btn.ruozhi-bl-done {
+  color: #d9534f;
+  border-color: #d9534f;
+  background: #fff0f0;
+  cursor: default;
+  pointer-events: none;
+}
+`;
+  document.head.appendChild(style);
+}
+
+/** 给评论元素注入手动拉黑按钮 */
+function injectManualBlacklistButton(el: Element, info: PendingComment): void {
+  // 避免重复注入
+  if (blacklistButtonInjected.has(el)) return;
+  blacklistButtonInjected.add(el);
+
+  ensureManualBlacklistStyles();
+
+  const btn = document.createElement("button");
+  btn.className = "ruozhi-manual-bl-btn";
+  btn.innerHTML = "🚫 拉黑";
+  btn.title = `将 ${info.uname} 加入黑名单`;
+
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // 添加确认
+    if (
+      !confirm(
+        `确定要将用户 "${info.uname}" 加入黑名单吗？\n该用户的所有评论将被隐藏。`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const config = getConfig();
+      await addToBlacklist({
+        mid: info.mid,
+        uname: info.uname,
+        rpid: info.rpid,
+        message: info.message,
+        reason: "[手动拉黑]",
+        videoTitle: currentContext.videoTitle,
+        videoUrl: window.location.href,
+        timestamp: Date.now(),
+        severity: "block",
+        source: "manual",
+      });
+
+      console.log(TAG, `🚫 手动拉黑: ${info.uname}`);
+
+      // 立即折叠/隐藏该评论
+      if (config.foldMode) {
+        foldEl(el, info, {
+          reason: "[手动拉黑]",
+          severity: "block",
+        });
+      } else {
+        hideEl(el);
+      }
+
+      // 按钮变灰表示已拉黑
+      btn.classList.add("ruozhi-bl-done");
+      btn.innerHTML = "✅ 已拉黑";
+    } catch (err) {
+      console.error(TAG, "❌ 手动拉黑失败:", err);
+    }
+  });
+
+  // 将按钮插入到评论元素后面
+  const parent = el.parentNode;
+  if (parent) {
+    parent.insertBefore(btn, el.nextSibling);
   }
 }
 
