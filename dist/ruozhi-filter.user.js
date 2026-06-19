@@ -1285,28 +1285,39 @@
     btn.textContent = "🚫 拉黑";
     btn.title = "将 " + info.uname + " 加入黑名单";
     Object.assign(btn.style, {
-      display: "inline-block",
-      marginBottom: "2px",
-      padding: "0 8px",
-      fontSize: "12px",
-      color: "#999",
-      background: "transparent",
+      float: "right",
+      marginTop: "4px",
+      marginRight: "4px",
+      padding: "1px 8px",
+      fontSize: "11px",
+      color: "#aaa",
+      background: "rgba(255,255,255,0.88)",
       border: "1px solid #e0e0e0",
-      borderRadius: "4px",
+      borderRadius: "10px",
       cursor: "pointer",
       userSelect: "none",
       fontFamily: "system-ui, -apple-system, sans-serif",
-      lineHeight: "22px",
-      height: "24px",
-      transition: "color 0.15s, border-color 0.15s, background 0.15s"
+      lineHeight: "18px",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+      transition: "color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s"
     });
     btn.addEventListener("mouseenter", () => {
       if (btn.dataset.done === "1") return;
-      Object.assign(btn.style, { color: "#d9534f", borderColor: "#d9534f", background: "#fff5f5" });
+      Object.assign(btn.style, {
+        color: "#d9534f",
+        borderColor: "#d9534f",
+        background: "#fff5f5",
+        boxShadow: "0 1px 4px rgba(217,83,79,0.15)"
+      });
     });
     btn.addEventListener("mouseleave", () => {
       if (btn.dataset.done === "1") return;
-      Object.assign(btn.style, { color: "#999", borderColor: "#e0e0e0", background: "transparent" });
+      Object.assign(btn.style, {
+        color: "#aaa",
+        borderColor: "#e0e0e0",
+        background: "rgba(255,255,255,0.88)",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)"
+      });
     });
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -1334,7 +1345,13 @@
         }
         btn.dataset.done = "1";
         btn.textContent = "✅ 已拉黑";
-        Object.assign(btn.style, { color: "#d9534f", borderColor: "#f5c6cb", background: "#fff0f0", cursor: "default" });
+        Object.assign(btn.style, {
+          color: "#d9534f",
+          borderColor: "#f5c6cb",
+          background: "#fff0f0",
+          boxShadow: "none",
+          cursor: "default"
+        });
       } catch (err) {
         console.error(TAG, "❌ 手动拉黑失败:", err);
       }
