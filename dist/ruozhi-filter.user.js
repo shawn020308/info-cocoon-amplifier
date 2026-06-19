@@ -1285,6 +1285,8 @@
     btn.textContent = "🚫 拉黑";
     btn.title = "将 " + info.uname + " 加入黑名单";
     Object.assign(btn.style, {
+      position: "relative",
+      zIndex: "1",
       float: "right",
       marginTop: "4px",
       marginRight: "4px",
