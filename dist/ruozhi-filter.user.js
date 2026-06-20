@@ -1019,60 +1019,73 @@ ${ctxBlock}
       setTimeout(() => toast.remove(), 300);
     }, duration);
   }
+  function waitFor(checker, timeoutMs) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        if (checker()) return resolve(true);
+        if (Date.now() - start > timeoutMs) return resolve(false);
+        requestAnimationFrame(check);
+      };
+      check();
+    });
+  }
   async function triggerReport(commentEl, reason) {
     const reasonCopied = await copyToClipboard(reason);
     if (reasonCopied) {
       showToast("✅ 已复制 AI 判定理由，请粘贴到举报框 (Cmd+V)");
     }
-    const sr = commentEl.shadowRoot;
-    if (!sr) {
-      console.warn(TAG$5, "⚠️ 评论元素无 shadowRoot，无法触发举报");
-      return { opened: false, reasonCopied };
+    const el = commentEl;
+    const prevDisplay = el.style.display;
+    el.style.display = "";
+    try {
+      const sr = el.shadowRoot;
+      if (!sr) {
+        console.warn(TAG$5, "⚠️ 评论元素无 shadowRoot，无法触发举报");
+        return { opened: false, reasonCopied };
+      }
+      const actionButtons = sr.querySelector(
+        "bili-comment-action-buttons-renderer"
+      );
+      if (!actionButtons || !actionButtons.shadowRoot) {
+        console.warn(TAG$5, "⚠️ 未找到 action-buttons");
+        return { opened: false, reasonCopied };
+      }
+      const actionSR = actionButtons.shadowRoot;
+      const moreBtn = actionSR.querySelector(
+        "#more button"
+      );
+      if (!moreBtn) {
+        console.warn(TAG$5, "⚠️ 未找到「更多」按钮");
+        return { opened: false, reasonCopied };
+      }
+      moreBtn.click();
+      const menuVisible = await waitFor(() => {
+        const m = actionSR.querySelector(
+          "bili-comment-menu"
+        );
+        if (!m || !m.shadowRoot) return false;
+        const style = getComputedStyle(m);
+        return style.display !== "none" && style.visibility !== "hidden";
+      }, 2e3);
+      if (!menuVisible) {
+        console.warn(TAG$5, "⚠️ 菜单未显示");
+        return { opened: false, reasonCopied };
+      }
+      const menuEl = actionSR.querySelector("bili-comment-menu");
+      const menuSR = menuEl.shadowRoot;
+      const reportLi = findElementByText(menuSR, "举报");
+      if (!reportLi) {
+        console.warn(TAG$5, "⚠️ 菜单中未找到「举报」");
+        return { opened: false, reasonCopied };
+      }
+      reportLi.click();
+      waitAndFillReportForm(reason);
+      console.log(TAG$5, "✅ 已触发原生举报弹窗");
+      return { opened: true, reasonCopied };
+    } finally {
+      el.style.display = prevDisplay;
     }
-    const actionButtons = sr.querySelector("bili-comment-action-buttons-renderer");
-    if (!actionButtons || !actionButtons.shadowRoot) {
-      console.warn(TAG$5, "⚠️ 未找到 action-buttons，无法触发举报");
-      return { opened: false, reasonCopied };
-    }
-    const actionSR = actionButtons.shadowRoot;
-    const moreBtn = actionSR.querySelector("#more button");
-    if (!moreBtn) {
-      console.warn(TAG$5, "⚠️ 未找到「更多」按钮");
-      return { opened: false, reasonCopied };
-    }
-    moreBtn.click();
-    const menu = await waitForElement(
-      () => {
-        const m = actionSR.querySelector("bili-comment-menu");
-        return m && m.shadowRoot ? m : null;
-      },
-      1500
-    );
-    if (!menu) {
-      console.warn(TAG$5, "⚠️ 菜单未出现，可能已被拦截");
-      return { opened: false, reasonCopied };
-    }
-    const menuSR = menu.shadowRoot;
-    const reportLi = findElementByText(menuSR, "举报");
-    if (!reportLi) {
-      console.warn(TAG$5, "⚠️ 菜单中未找到「举报」");
-      return { opened: false, reasonCopied };
-    }
-    reportLi.click();
-    waitAndFillReportForm(reason);
-    return { opened: true, reasonCopied };
-  }
-  function waitForElement(finder, timeoutMs) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const check = () => {
-        const el = finder();
-        if (el) return resolve(el);
-        if (Date.now() - start > timeoutMs) return resolve(null);
-        requestAnimationFrame(check);
-      };
-      check();
-    });
   }
   function waitAndFillReportForm(reason) {
     const start = Date.now();
