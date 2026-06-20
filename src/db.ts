@@ -218,6 +218,13 @@ export async function setCache(entry: CacheEntry): Promise<void> {
   }
 }
 
+/** 删除单条评论缓存（同时清除内存和 IndexedDB） */
+export async function deleteCommentFromCache(hash: string): Promise<void> {
+  cacheByHash.delete(hash);
+  const db = await getDB();
+  await db.delete("cache", hash);
+}
+
 /** 清空缓存 */
 export async function clearCache(): Promise<void> {
   const db = await getDB();

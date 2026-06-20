@@ -4,7 +4,12 @@
 import { esc } from "./dom-utils";
 import type { PendingComment } from "./comment-extractor";
 import { triggerReport, copyReason } from "./report";
-import { removeFromBlacklist, isBlacklistedSync } from "./db";
+import {
+  removeFromBlacklist,
+  isBlacklistedSync,
+  deleteCommentFromCache,
+  commentHash,
+} from "./db";
 
 const TAG = "[ruozhi-filter]";
 
@@ -107,7 +112,10 @@ export function foldEl(
         ?.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
+            const hash = commentHash(info.message, info.mid);
             await removeFromBlacklist(blRecord.mid);
+            // ★ 同时清除该评论的缓存，防止快速路径再次折叠
+            await deleteCommentFromCache(hash);
             (el as HTMLElement).style.display = "";
             foldElDiv.remove();
             origElDiv.remove();
@@ -124,8 +132,11 @@ export function foldEl(
       );
       origElDiv
         .querySelector(".ruozhi-misjudge-btn")
-        ?.addEventListener("click", (e) => {
+        ?.addEventListener("click", async (e) => {
           e.stopPropagation();
+          const hash = commentHash(info.message, info.mid);
+          // ★ 删除缓存中的违规记录，防止快速路径再次折叠
+          await deleteCommentFromCache(hash);
           (el as HTMLElement).style.display = "";
           foldElDiv.remove();
           origElDiv.remove();

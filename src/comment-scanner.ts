@@ -70,9 +70,11 @@ function scanPage(): void {
     // WeakSet<Element> 仍能防重复注入，不依赖 rpid
     injectManualBlacklistButton(el, info);
 
-    if (scannedRpids.has(info.rpid)) return;
-
     const config = getConfig();
+
+    // ★ 快速路径必须在 scannedRpids 守卫之前：
+    // 切换排序/翻页时 DOM 重建，同一条评论的 rpid 不变，
+    // 若先检查 scannedRpids 则会跳过黑名单/缓存判定，导致已拉黑的评论不会立刻折叠。
 
     // ★ 快速路径：同步查内存黑名单，命中即刻折叠，不等 batch
     if (config.enableBlacklist) {
@@ -121,6 +123,9 @@ function scanPage(): void {
         return;
       }
     }
+
+    // 已经扫描过且未命中黑名单/缓存 → 跳过，避免重复加入 pendingBatch
+    if (scannedRpids.has(info.rpid)) return;
 
     scannedRpids.add(info.rpid);
     found++;

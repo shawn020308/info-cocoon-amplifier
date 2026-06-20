@@ -546,6 +546,11 @@ ${config.filterDimensions}
       }
     }
   }
+  async function deleteCommentFromCache(hash) {
+    cacheByHash.delete(hash);
+    const db = await getDB();
+    await db.delete("cache", hash);
+  }
   async function clearCache() {
     const db = await getDB();
     cacheByHash.clear();
@@ -1274,7 +1279,9 @@ ${config.filterDimensions}
         (_c = origElDiv.querySelector(".ruozhi-unblock-btn")) == null ? void 0 : _c.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
+            const hash = commentHash(info.message, info.mid);
             await removeFromBlacklist(blRecord.mid);
+            await deleteCommentFromCache(hash);
             el.style.display = "";
             foldElDiv.remove();
             origElDiv.remove();
@@ -1289,8 +1296,10 @@ ${config.filterDimensions}
   <button class="ruozhi-misjudge-btn" style="padding:3px 10px;font-size:12px;border:1px solid #17a2b8;border-radius:4px;background:#fff;color:#17a2b8;cursor:pointer">✅ 误判，展开</button>
 </div>`
         );
-        (_d = origElDiv.querySelector(".ruozhi-misjudge-btn")) == null ? void 0 : _d.addEventListener("click", (e) => {
+        (_d = origElDiv.querySelector(".ruozhi-misjudge-btn")) == null ? void 0 : _d.addEventListener("click", async (e) => {
           e.stopPropagation();
+          const hash = commentHash(info.message, info.mid);
+          await deleteCommentFromCache(hash);
           el.style.display = "";
           foldElDiv.remove();
           origElDiv.remove();
@@ -1678,7 +1687,6 @@ ${config.filterDimensions}
       const info = extractComment(el);
       if (!info) return;
       injectManualBlacklistButton(el, info);
-      if (scannedRpids.has(info.rpid)) return;
       const config = getConfig();
       if (config.enableBlacklist) {
         const blRecord = isBlacklistedSync(info.mid, info.uname);
@@ -1722,6 +1730,7 @@ ${config.filterDimensions}
           return;
         }
       }
+      if (scannedRpids.has(info.rpid)) return;
       scannedRpids.add(info.rpid);
       found++;
       if (!config.enableAI && !config.enableBlacklist) return;
