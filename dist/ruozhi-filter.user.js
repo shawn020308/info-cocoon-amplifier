@@ -23,6 +23,7 @@
     foldMode: "classic",
     enableAI: true,
     enableBlacklist: true,
+    blacklistConfirm: true,
     blacklistStrictness: 1,
     pricePerMToken: 1.1,
     sendUname: false,
@@ -692,6 +693,9 @@ ${ctxBlock}
         if (typeof parsed.foldMode === "boolean") {
           parsed.foldMode = parsed.foldMode ? "classic" : "none";
         }
+        if (parsed.blacklistConfirm === void 0) {
+          parsed.blacklistConfirm = true;
+        }
         _config = parsed;
         return parsed;
       }
@@ -705,6 +709,7 @@ ${ctxBlock}
       foldMode: "classic",
       enableAI: true,
       enableBlacklist: true,
+      blacklistConfirm: true,
       blacklistStrictness: 1,
       pricePerMToken: 1.1,
       sendUname: false,
@@ -1059,14 +1064,14 @@ ${ctxBlock}
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      if (!confirm(
+      const config = getConfig();
+      if (config.blacklistConfirm !== false && !confirm(
         `确定要将用户 "${info.uname}" 加入黑名单吗？
 该用户的所有评论将被隐藏。`
       )) {
         return;
       }
       try {
-        const config = getConfig();
         await addToBlacklist({
           mid: info.mid,
           uname: info.uname,
@@ -1722,6 +1727,13 @@ ${ctxBlock}
       </label>
     </div>
 
+    <div id="ruozhi-bl-confirm-row" style="margin-bottom:12px;margin-left:24px">
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="ruozhi-bl-confirm" type="checkbox" ${config.blacklistConfirm ? "checked" : ""}>
+        拉黑时弹出确认框（关闭可直接拉黑）
+      </label>
+    </div>
+
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">💰 Token单价 (元/百万)</label>
       <input id="ruozhi-price" type="number" value="${config.pricePerMToken}" step="0.1" min="0"
@@ -1781,7 +1793,7 @@ ${ctxBlock}
     return div.innerHTML;
   }
   function bindPanelEvents(root, config, onConfigChange) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const tabs = root.querySelectorAll(".ruozhi-tab");
     tabs.forEach((tab) => {
       tab.addEventListener("click", async () => {
@@ -1820,28 +1832,37 @@ ${ctxBlock}
       });
     });
     (_a = root.querySelector("#ruozhi-save")) == null ? void 0 : _a.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e, _f, _g, _h, _i, _j, _k;
+      var _a2, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l;
       const newConfig = {
         ...config,
         apiKey: ((_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value) ?? "",
         apiEndpoint: ((_b2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _b2.value) ?? config.apiEndpoint,
         prompt: ((_c2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _c2.value) ?? config.prompt,
         enableAI: ((_d2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _d2.checked) ?? true,
-        foldMode: ((_e = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e.value) ?? "classic",
+        foldMode: ((_e2 = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e2.value) ?? "classic",
         enableBlacklist: ((_f = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f.checked) ?? true,
+        blacklistConfirm: ((_g = root.querySelector("#ruozhi-bl-confirm")) == null ? void 0 : _g.checked) ?? true,
         pricePerMToken: parseFloat(
-          ((_g = root.querySelector("#ruozhi-price")) == null ? void 0 : _g.value) || "1.1"
+          ((_h = root.querySelector("#ruozhi-price")) == null ? void 0 : _h.value) || "1.1"
         ) || 1.1,
-        sendUname: ((_h = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _h.checked) ?? false,
-        sendMid: ((_i = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _i.checked) ?? false,
-        sendVideoDesc: ((_j = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _j.checked) ?? false,
-        filterDimensions: ((_k = root.querySelector("#ruozhi-dimensions")) == null ? void 0 : _k.value) ?? config.filterDimensions
+        sendUname: ((_i = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _i.checked) ?? false,
+        sendMid: ((_j = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _j.checked) ?? false,
+        sendVideoDesc: ((_k = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _k.checked) ?? false,
+        filterDimensions: ((_l = root.querySelector("#ruozhi-dimensions")) == null ? void 0 : _l.value) ?? config.filterDimensions
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
       showStatus(root, "✅ 设置已保存", "#28a745");
     });
-    (_b = root.querySelector("#ruozhi-test")) == null ? void 0 : _b.addEventListener("click", async () => {
+    (_b = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _b.addEventListener("change", () => {
+      var _a2;
+      const checked = (_a2 = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _a2.checked;
+      const confirmRow = root.querySelector(
+        "#ruozhi-bl-confirm-row"
+      );
+      if (confirmRow) confirmRow.style.display = checked ? "" : "none";
+    });
+    (_c = root.querySelector("#ruozhi-test")) == null ? void 0 : _c.addEventListener("click", async () => {
       var _a2;
       const apiKey = (_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value;
       if (!apiKey) {
@@ -1856,11 +1877,11 @@ ${ctxBlock}
         ok ? "#28a745" : "#d9534f"
       );
     });
-    (_c = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _c.addEventListener("click", async () => {
+    (_d = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _d.addEventListener("click", async () => {
       await clearCache();
       showStatus(root, "✅ 缓存已清除", "#28a745");
     });
-    (_d = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _d.addEventListener("click", async () => {
+    (_e = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _e.addEventListener("click", async () => {
       if (!confirm("确定要清空所有黑名单记录吗？此操作不可撤销。")) return;
       await clearBlacklist();
       showStatus(root, "✅ 黑名单已清空", "#28a745");

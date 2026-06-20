@@ -17,6 +17,10 @@ export function getConfig(): FilterConfig {
       if (typeof parsed.foldMode === "boolean") {
         parsed.foldMode = parsed.foldMode ? "classic" : "none";
       }
+      // 兼容旧版配置：没有 blacklistConfirm 时默认 true
+      if (parsed.blacklistConfirm === undefined) {
+        parsed.blacklistConfirm = true;
+      }
       _config = parsed;
       return parsed;
     }
@@ -31,6 +35,7 @@ export function getConfig(): FilterConfig {
     foldMode: "classic" as const,
     enableAI: true,
     enableBlacklist: true,
+    blacklistConfirm: true,
     blacklistStrictness: 1,
     pricePerMToken: 1.1,
     sendUname: false,

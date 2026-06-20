@@ -255,6 +255,13 @@ function buildPanelHTML(config: FilterConfig): string {
       </label>
     </div>
 
+    <div id="ruozhi-bl-confirm-row" style="margin-bottom:12px;margin-left:24px">
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="ruozhi-bl-confirm" type="checkbox" ${config.blacklistConfirm ? "checked" : ""}>
+        拉黑时弹出确认框（关闭可直接拉黑）
+      </label>
+    </div>
+
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">💰 Token单价 (元/百万)</label>
       <input id="ruozhi-price" type="number" value="${config.pricePerMToken}" step="0.1" min="0"
@@ -387,6 +394,9 @@ function bindPanelEvents(
       enableBlacklist:
         (root.querySelector("#ruozhi-enable-bl") as HTMLInputElement)
           ?.checked ?? true,
+      blacklistConfirm:
+        (root.querySelector("#ruozhi-bl-confirm") as HTMLInputElement)
+          ?.checked ?? true,
       pricePerMToken:
         parseFloat(
           (root.querySelector("#ruozhi-price") as HTMLInputElement)?.value ||
@@ -408,6 +418,17 @@ function bindPanelEvents(
     saveConfig(newConfig);
     onConfigChange(newConfig);
     showStatus(root, "✅ 设置已保存", "#28a745");
+  });
+
+  // enableBlacklist 联动 blacklistConfirm 行显隐
+  root.querySelector("#ruozhi-enable-bl")?.addEventListener("change", () => {
+    const checked = (
+      root.querySelector("#ruozhi-enable-bl") as HTMLInputElement
+    )?.checked;
+    const confirmRow = root.querySelector(
+      "#ruozhi-bl-confirm-row",
+    ) as HTMLElement;
+    if (confirmRow) confirmRow.style.display = checked ? "" : "none";
   });
 
   // 测试连接

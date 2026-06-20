@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.2.3-blue?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/版本-0.2.2-blue?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/状态-能用就行-brightgreen?style=flat-square" alt="status" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="license" />
   <img src="https://img.shields.io/badge/PR-welcome-ff69b4?style=flat-square" alt="pr" />

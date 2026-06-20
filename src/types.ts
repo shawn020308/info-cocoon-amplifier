@@ -58,6 +58,8 @@ export interface FilterConfig {
   enableAI: boolean;
   /** 是否启用本地黑名单 */
   enableBlacklist: boolean;
+  /** 手动拉黑是否需要确认弹窗 */
+  blacklistConfirm: boolean;
   /** 黑名单严格度: 0 = 仅折叠, 1 = 折叠+标记, 2 = 直接拉黑 */
   blacklistStrictness: number;
   /** 自定义token单价 (元/百万token) */
@@ -146,6 +148,7 @@ export const DEFAULT_CONFIG: FilterConfig = {
   foldMode: "classic",
   enableAI: true,
   enableBlacklist: true,
+  blacklistConfirm: true,
   blacklistStrictness: 1,
   pricePerMToken: 1.1,
   sendUname: false,

@@ -90,7 +90,11 @@ export function injectManualBlacklistButton(
     e.stopPropagation();
     e.preventDefault();
 
+    const config = getConfig();
+
+    // 除非用户显式关闭确认，否则弹出确认框
     if (
+      config.blacklistConfirm !== false &&
       !confirm(
         `确定要将用户 "${info.uname}" 加入黑名单吗？\n该用户的所有评论将被隐藏。`,
       )
@@ -99,7 +103,6 @@ export function injectManualBlacklistButton(
     }
 
     try {
-      const config = getConfig();
       await addToBlacklist({
         mid: info.mid,
         uname: info.uname,
