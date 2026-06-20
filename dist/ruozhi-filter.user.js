@@ -1233,7 +1233,7 @@ ${ctxBlock}
         switch (style) {
           case "classic":
             return `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
-<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span style="float:right;font-size:11px;color:#999">▼ 展开</span>
+<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span class="ruozhi-fold-arrow" data-collapsed="▼ 展开" data-expanded="▲ 收起" style="float:right;font-size:11px;color:#999">▼ 展开</span>
 </div><div class="ruozhi-original" style="display:none;padding:8px 12px;background:#f8f9fa;border-left:3px solid #ffc107;margin:4px 0;border-radius:0 6px 6px 0;font-size:13px">
 <div style="margin-bottom:6px;font-size:12px;color:#999">🧠 AI判定: <strong>${esc(verdict.reason)}</strong></div>
 <div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:8px">${misjudgeBtnHTML}</div></div>`;
@@ -1246,7 +1246,7 @@ ${ctxBlock}
 <div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:4px">${misjudgeBtnHTML}</div></div>`;
           default:
             return `<div class="ruozhi-folded" style="background:#fafafa;border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:#aaa;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
-<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span style="float:right;font-size:10px;color:#ccc">▾</span>
+<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span class="ruozhi-fold-arrow" data-collapsed="▾" data-expanded="▴" style="float:right;font-size:10px;color:#ccc">▾</span>
 </div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:#fafafa;border-left:3px solid #ddd;margin:0 0 4px 0;font-size:12px;color:#999">
 <div style="margin-bottom:4px;font-size:11px;color:#bbb">AI判定: ${esc(verdict.reason)}</div>
 <div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:6px">${misjudgeBtnHTML}</div></div>`;
@@ -1260,13 +1260,18 @@ ${ctxBlock}
       (_b = el.parentNode) == null ? void 0 : _b.insertBefore(origElDiv, el);
       el.style.display = "none";
       foldElDiv.addEventListener("click", () => {
-        const hidden = origElDiv.style.display === "none";
-        origElDiv.style.display = hidden ? "block" : "none";
-        const arrow = foldElDiv.querySelector("span:last-child");
-        if (arrow) arrow.textContent = hidden ? "▴" : "▾";
+        const collapsed = origElDiv.style.display === "none";
+        origElDiv.style.display = collapsed ? "block" : "none";
+        const arrow = foldElDiv.querySelector(
+          ".ruozhi-fold-arrow"
+        );
+        if (arrow) {
+          arrow.textContent = collapsed ? arrow.dataset.expanded ?? arrow.textContent : arrow.dataset.collapsed ?? arrow.textContent;
+        }
       });
       const doMisjudge = (e) => {
         e.stopPropagation();
+        if (!confirm("确定认为这是误判吗？评论将恢复显示。")) return;
         el.style.display = "";
         foldElDiv.remove();
         origElDiv.remove();
@@ -1311,6 +1316,7 @@ ${ctxBlock}
         }
         const doUnblock = async (e) => {
           e.stopPropagation();
+          if (!confirm("确定要取消拉黑吗？该用户的评论将恢复显示。")) return;
           try {
             await removeFromBlacklist(blRecord.mid);
             el.style.display = "";
