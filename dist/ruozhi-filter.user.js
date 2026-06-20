@@ -2556,8 +2556,19 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     });
     (_a = root.querySelector("#ruozhi-save")) == null ? void 0 : _a.addEventListener("click", () => {
       var _a2, _b2, _c2, _d2, _e2, _f2, _g, _h, _i, _j, _k, _l, _m;
+      let storedConfig = {};
+      try {
+        storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+      } catch {
+      }
       const newConfig = {
         ...config,
+        // 保护字段：从存储中取最新值，避免被闭包捕获的旧config覆盖
+        learnedProfile: storedConfig.learnedProfile ?? config.learnedProfile ?? "",
+        learningCorrections: storedConfig.learningCorrections ?? config.learningCorrections ?? [],
+        lastRefinedCount: storedConfig.lastRefinedCount ?? config.lastRefinedCount ?? 0,
+        knowledgeBase: storedConfig.knowledgeBase ?? config.knowledgeBase ?? [],
+        // UI 表单字段
         apiKey: ((_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value) ?? "",
         apiEndpoint: ((_b2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _b2.value) ?? config.apiEndpoint,
         prompt: ((_c2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _c2.value) ?? config.prompt,

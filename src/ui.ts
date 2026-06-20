@@ -409,8 +409,25 @@ function bindPanelEvents(
   });
 
   root.querySelector("#ruozhi-save")?.addEventListener("click", () => {
+    // ★ 从GM存储读取最新状态，保护学习/知识库数据不被闭包旧config覆盖
+    let storedConfig: Partial<FilterConfig> = {};
+    try {
+      storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+    } catch {
+      /* */
+    }
+
     const newConfig: FilterConfig = {
       ...config,
+      // 保护字段：从存储中取最新值，避免被闭包捕获的旧config覆盖
+      learnedProfile:
+        storedConfig.learnedProfile ?? config.learnedProfile ?? "",
+      learningCorrections:
+        storedConfig.learningCorrections ?? config.learningCorrections ?? [],
+      lastRefinedCount:
+        storedConfig.lastRefinedCount ?? config.lastRefinedCount ?? 0,
+      knowledgeBase: storedConfig.knowledgeBase ?? config.knowledgeBase ?? [],
+      // UI 表单字段
       apiKey:
         (root.querySelector("#ruozhi-apikey") as HTMLInputElement)?.value ?? "",
       apiEndpoint:
