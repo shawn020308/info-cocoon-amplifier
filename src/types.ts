@@ -52,8 +52,8 @@ export interface FilterConfig {
   apiEndpoint: string;
   model: string;
   prompt: string;
-  /** 折叠样式: "none"=完全隐藏, "classic"=黄色警告条, "light"=极简灰线 */
-  foldMode: "none" | "classic" | "light";
+  /** 折叠样式: "none"=完全隐藏, "classic"=黄色警告条, "light"=极简灰线, "dim"=隐形弱化 */
+  foldMode: "none" | "classic" | "light" | "dim";
   /** 是否启用AI过滤 */
   enableAI: boolean;
   /** 是否启用本地黑名单 */
@@ -161,5 +161,6 @@ export const DEFAULT_CONFIG: FilterConfig = {
 - **人身攻击**：针对个人的侮辱、谩骂、诅咒
 - **引战/煽动**：故意挑起争端，使用极端化言论
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`,
+- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
 };

@@ -34,7 +34,8 @@
 - **人身攻击**：针对个人的侮辱、谩骂、诅咒
 - **引战/煽动**：故意挑起争端，使用极端化言论
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
+- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`
   };
   let _devMode = false;
   function setDevMode(v) {
@@ -46,7 +47,7 @@
   function warn(tag, ...args) {
     if (_devMode) console.warn(tag, ...args);
   }
-  const TAG$6 = "[ruozhi-filter]";
+  const TAG$7 = "[ruozhi-filter]";
   function buildSystemPrompt(config, ctx) {
     let ctxBlock = `视频标题：${ctx.videoTitle}`;
     if (config.sendVideoDesc) {
@@ -93,7 +94,7 @@ ${ctxBlock}
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(config, replies);
     log(
-      TAG$6,
+      TAG$7,
       "📤 请求体:",
       JSON.stringify({
         model: config.model,
@@ -124,17 +125,17 @@ ${ctxBlock}
           response_format: { type: "json_object" }
         })
       });
-      log(TAG$6, `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
+      log(TAG$7, `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
       if (!response.ok) {
         const errText = await response.text();
-        console.error(TAG$6, `❌ API ${response.status}:`, errText.slice(0, 200));
+        console.error(TAG$7, `❌ API ${response.status}:`, errText.slice(0, 200));
         throw new Error(`DeepSeek API error ${response.status}`);
       }
       const data = await response.json();
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
       if (!content) {
-        warn(TAG$6, "⚠️ AI 返回空内容");
+        warn(TAG$7, "⚠️ AI 返回空内容");
         return { verdicts: [], usage };
       }
       try {
@@ -146,11 +147,11 @@ ${ctxBlock}
         const parsed = JSON.parse(jsonStr);
         return { verdicts: parsed.verdicts ?? [], usage };
       } catch (e) {
-        console.error(TAG$6, "❌ AI 返回解析失败:", e);
+        console.error(TAG$7, "❌ AI 返回解析失败:", e);
         return { verdicts: [], usage };
       }
     } catch (err) {
-      console.error(TAG$6, "❌ 网络请求失败:", err);
+      console.error(TAG$7, "❌ 网络请求失败:", err);
       throw err;
     }
   }
@@ -969,7 +970,7 @@ ${ctxBlock}
       return null;
     }
   }
-  const TAG$5 = "[ruozhi-filter]";
+  const TAG$6 = "[ruozhi-filter]";
   async function copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -1071,7 +1072,7 @@ ${ctxBlock}
     if (reasonCopied) showToast("✅ 已复制 AI 判定理由，请粘贴到举报框 (Cmd+V)");
     const renderer = findCommentRenderer(commentEl);
     log(
-      TAG$5,
+      TAG$6,
       "🔍 评论容器:",
       renderer.tagName.toLowerCase(),
       "| shadowRoot:",
@@ -1086,13 +1087,13 @@ ${ctxBlock}
     try {
       const sr = renderer.shadowRoot;
       if (!sr) {
-        warn(TAG$5, "⚠️ 无 shadowRoot:", renderer.tagName);
+        warn(TAG$6, "⚠️ 无 shadowRoot:", renderer.tagName);
         return { opened: false, reasonCopied };
       }
       const actionBar = deepFind(sr, "bili-comment-action-buttons-renderer");
       if (!actionBar || !actionBar.shadowRoot) {
         warn(
-          TAG$5,
+          TAG$6,
           "⚠️ 未找到 action-buttons",
           "| 子元素:",
           [...sr.children].map((c) => c.tagName.toLowerCase())
@@ -1104,10 +1105,10 @@ ${ctxBlock}
         "#more button"
       );
       if (!moreBtn) {
-        warn(TAG$5, "⚠️ 未找到「更多」按钮");
+        warn(TAG$6, "⚠️ 未找到「更多」按钮");
         return { opened: false, reasonCopied };
       }
-      log(TAG$5, "🔍 点击「更多」...");
+      log(TAG$6, "🔍 点击「更多」...");
       moreBtn.click();
       const ok = await waitFor(() => {
         const m = actionSR.querySelector(
@@ -1118,7 +1119,7 @@ ${ctxBlock}
         ));
       }, 2e3);
       if (!ok) {
-        warn(TAG$5, "⚠️ 菜单未显示");
+        warn(TAG$6, "⚠️ 菜单未显示");
         return { opened: false, reasonCopied };
       }
       const menuEl = actionSR.querySelector("bili-comment-menu");
@@ -1127,13 +1128,13 @@ ${ctxBlock}
         "举报"
       );
       if (!reportLi) {
-        warn(TAG$5, "⚠️ 菜单中未找到「举报」");
+        warn(TAG$6, "⚠️ 菜单中未找到「举报」");
         return { opened: false, reasonCopied };
       }
-      log(TAG$5, "🔍 点击「举报」...");
+      log(TAG$6, "🔍 点击「举报」...");
       reportLi.click();
       waitAndFillReportForm(reason);
-      log(TAG$5, "✅ 已触发原生举报");
+      log(TAG$6, "✅ 已触发原生举报");
       return { opened: true, reasonCopied };
     } finally {
       renderer.style.display = prevDisplay;
@@ -1167,7 +1168,7 @@ ${ctxBlock}
               );
               if (sp) {
                 sp.click();
-                log(TAG$5, "✅ 已选中「引战、不友善言论」");
+                log(TAG$6, "✅ 已选中「引战、不友善言论」");
                 break;
               }
             }
@@ -1190,7 +1191,7 @@ ${ctxBlock}
         ta.value = reason.slice(0, 200);
         ta.dispatchEvent(new Event("input", { bubbles: true }));
         ta.dispatchEvent(new Event("change", { bubbles: true }));
-        log(TAG$5, "✅ 已自动填写举报理由");
+        log(TAG$6, "✅ 已自动填写举报理由");
         return;
       }
       if (Date.now() - s < 4e3) setTimeout(f, 300);
@@ -1202,8 +1203,9 @@ ${ctxBlock}
     if (ok) showToast("✅ 已复制 AI 判定理由，请粘贴到举报框 (Cmd+V)");
     return ok;
   }
+  const TAG$5 = "[ruozhi-filter]";
   function foldEl(el, info, verdict, style = "classic") {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
     try {
       const labelMap = {
         low: "⚠️ 轻微不适",
@@ -1225,27 +1227,29 @@ ${ctxBlock}
   <button class="ruozhi-copy-reason" style="padding:3px 10px;font-size:12px;border:1px solid #d4a574;border-radius:4px;background:#fff;color:#d4a574;cursor:pointer">📋 复制理由</button>
   <button class="ruozhi-report-btn" style="padding:3px 10px;font-size:12px;border:1px solid #d47574;border-radius:4px;background:#fff;color:#d47574;cursor:pointer">🚨 举报此评论</button>
 </div>` : "";
+      const foldedMisjudgeBtnHTML = '<span class="ruozhi-misjudge-btn" style="display:inline-flex;align-items:center;gap:2px;margin:0 6px;padding:1px 6px;font-size:11px;border:1px solid #17a2b8;border-radius:3px;background:#fff;color:#17a2b8;cursor:pointer;user-select:none">✅误判</span>';
+      const misjudgeBtnHTML = '<button class="ruozhi-misjudge-btn" style="padding:3px 10px;font-size:12px;border:1px solid #17a2b8;border-radius:4px;background:#fff;color:#17a2b8;cursor:pointer">✅ 误判，展开</button>';
       const html = (() => {
         switch (style) {
           case "classic":
             return `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
-<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span>${foldedReportBtnHTML}<span style="float:right;font-size:11px;color:#999">▼ 展开</span>
+<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span style="float:right;font-size:11px;color:#999">▼ 展开</span>
 </div><div class="ruozhi-original" style="display:none;padding:8px 12px;background:#f8f9fa;border-left:3px solid #ffc107;margin:4px 0;border-radius:0 6px 6px 0;font-size:13px">
 <div style="margin-bottom:6px;font-size:12px;color:#999">🧠 AI判定: <strong>${esc(verdict.reason)}</strong></div>
-<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
+<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:8px">${misjudgeBtnHTML}</div></div>`;
           case "dim":
             return `<div class="ruozhi-folded" style="padding:1px 8px;margin:1px 0;font-size:9px;color:#ddd;cursor:pointer;user-select:none;font-family:system-ui,sans-serif;line-height:1.2;transition:color .15s,background .15s;border-radius:4px"
   onmouseenter="this.style.color='#bbb';this.style.background='#fafafa'" onmouseleave="this.style.color='#ddd';this.style.background='transparent'">
-<span style="opacity:0.6">···</span>${foldedReportBtnHTML}
+<span style="opacity:0.6">···</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}
 </div><div class="ruozhi-original" style="display:none;padding:4px 8px;margin:0 0 2px 0;font-size:11px;color:#bbb;background:#fafafa;border-left:2px solid #eee;border-radius:0 4px 4px 0">
 <div style="margin-bottom:2px;font-size:10px;color:#ccc">${esc(verdict.reason)}</div>
-<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
+<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:4px">${misjudgeBtnHTML}</div></div>`;
           default:
             return `<div class="ruozhi-folded" style="background:#fafafa;border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:#aaa;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
-<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span>${foldedReportBtnHTML}<span style="float:right;font-size:10px;color:#ccc">▾</span>
+<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span>${foldedMisjudgeBtnHTML}${foldedReportBtnHTML}<span style="float:right;font-size:10px;color:#ccc">▾</span>
 </div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:#fafafa;border-left:3px solid #ddd;margin:0 0 4px 0;font-size:12px;color:#999">
 <div style="margin-bottom:4px;font-size:11px;color:#bbb">AI判定: ${esc(verdict.reason)}</div>
-<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
+<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}<div style="margin-top:6px">${misjudgeBtnHTML}</div></div>`;
         }
       })();
       const wrapper = document.createElement("div");
@@ -1261,6 +1265,16 @@ ${ctxBlock}
         const arrow = foldElDiv.querySelector("span:last-child");
         if (arrow) arrow.textContent = hidden ? "▴" : "▾";
       });
+      const doMisjudge = (e) => {
+        e.stopPropagation();
+        el.style.display = "";
+        foldElDiv.remove();
+        origElDiv.remove();
+      };
+      const foldedMisjudgeBtn = foldElDiv.querySelector(".ruozhi-misjudge-btn");
+      foldedMisjudgeBtn == null ? void 0 : foldedMisjudgeBtn.addEventListener("click", doMisjudge);
+      const expandedMisjudgeBtn = origElDiv.querySelector(".ruozhi-misjudge-btn");
+      expandedMisjudgeBtn == null ? void 0 : expandedMisjudgeBtn.addEventListener("click", doMisjudge);
       if (showReportBtn) {
         const foldedReportBtn = foldElDiv.querySelector(".ruozhi-report-btn");
         foldedReportBtn == null ? void 0 : foldedReportBtn.addEventListener("click", (e) => {
@@ -1277,6 +1291,37 @@ ${ctxBlock}
           e.stopPropagation();
           triggerReport(el, verdict.reason);
         });
+      }
+      const blRecord = isBlacklistedSync(info.mid, info.uname);
+      if (blRecord) {
+        const unblockBtnHTML = '<button class="ruozhi-unblock-btn" style="padding:3px 10px;font-size:12px;border:1px solid #28a745;border-radius:4px;background:#fff;color:#28a745;cursor:pointer">↩️ 取消拉黑</button>';
+        const foldedUnblock = document.createElement("span");
+        foldedUnblock.innerHTML = '<span class="ruozhi-unblock-btn" style="display:inline-flex;align-items:center;gap:2px;margin:0 6px;padding:1px 6px;font-size:11px;border:1px solid #28a745;border-radius:3px;background:#fff;color:#28a745;cursor:pointer;user-select:none">↩️取消拉黑</span>';
+        foldElDiv.appendChild(foldedUnblock.firstElementChild);
+        const btnRow = (_c = origElDiv.querySelector(
+          ".ruozhi-copy-reason"
+        )) == null ? void 0 : _c.parentElement;
+        if (btnRow) {
+          btnRow.insertAdjacentHTML("beforeend", unblockBtnHTML);
+        } else {
+          origElDiv.insertAdjacentHTML(
+            "beforeend",
+            `<div style="margin-top:8px;display:flex;gap:8px">${unblockBtnHTML}</div>`
+          );
+        }
+        const doUnblock = async (e) => {
+          e.stopPropagation();
+          try {
+            await removeFromBlacklist(blRecord.mid);
+            el.style.display = "";
+            foldElDiv.remove();
+            origElDiv.remove();
+          } catch (err) {
+            console.error(TAG$5, "❌ 取消拉黑失败:", err);
+          }
+        };
+        (_d = foldElDiv.querySelector(".ruozhi-unblock-btn")) == null ? void 0 : _d.addEventListener("click", doUnblock);
+        (_e = origElDiv.querySelector(".ruozhi-unblock-btn")) == null ? void 0 : _e.addEventListener("click", doUnblock);
       }
       return true;
     } catch {
