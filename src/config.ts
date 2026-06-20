@@ -2,6 +2,7 @@
 // config.ts - 配置管理和上下文状态
 // ============================================================
 import type { FilterConfig, ReplyContext } from "./types";
+import { DEFAULT_CONFIG } from "./types";
 import { setDevMode } from "./debug";
 
 /** 缓存的配置，null 表示需要从 GM 存储加载 */
@@ -33,12 +34,14 @@ export function getConfig(): FilterConfig {
           parsed.filterDimensions;
         delete parsed.filterDimensions;
       }
-      setDevMode(parsed.devMode);
-      _config = parsed;
-      return parsed;
+      // ★ 关键修复：始终合并 DEFAULT_CONFIG，确保新增字段不会为 undefined
+      const merged: FilterConfig = { ...DEFAULT_CONFIG, ...parsed };
+      setDevMode(merged.devMode);
+      _config = merged;
+      return merged;
     }
-  } catch {
-    /* */
+  } catch (e) {
+    console.error("[ruozhi-filter]", "❌ 配置加载失败:", e);
   }
   return {
     apiKey: "",
@@ -55,6 +58,11 @@ export function getConfig(): FilterConfig {
     sendUname: false,
     sendMid: false,
     sendVideoDesc: false,
+    learningEnabled: true,
+    learnedProfile: "",
+    learningCorrections: [],
+    lastRefinedCount: 0,
+    knowledgeBase: [],
   };
 }
 

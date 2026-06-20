@@ -10,6 +10,8 @@ import {
   deleteCommentFromCache,
   commentHash,
 } from "./db";
+import { recordLearning } from "./learning";
+import { currentContext } from "./config";
 
 const TAG = "[ruozhi-filter]";
 
@@ -116,6 +118,15 @@ export function foldEl(
             await removeFromBlacklist(blRecord.mid);
             // ★ 同时清除该评论的缓存，防止快速路径再次折叠
             await deleteCommentFromCache(hash);
+            // ★ AI自我学习：记录取消拉黑行为
+            recordLearning({
+              type: "unblock",
+              message: info.message,
+              aiReason: blRecord.reason,
+              aiSeverity: blRecord.severity,
+              uname: info.uname,
+              videoTitle: currentContext.videoTitle,
+            });
             (el as HTMLElement).style.display = "";
             foldElDiv.remove();
             origElDiv.remove();
@@ -137,6 +148,15 @@ export function foldEl(
           const hash = commentHash(info.message, info.mid);
           // ★ 删除缓存中的违规记录，防止快速路径再次折叠
           await deleteCommentFromCache(hash);
+          // ★ AI自我学习：记录误判纠正
+          recordLearning({
+            type: "misjudge",
+            message: info.message,
+            aiReason: verdict.reason,
+            aiSeverity: verdict.severity,
+            uname: info.uname,
+            videoTitle: currentContext.videoTitle,
+          });
           (el as HTMLElement).style.display = "";
           foldElDiv.remove();
           origElDiv.remove();

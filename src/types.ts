@@ -46,6 +46,24 @@ export interface BiliReplyResponse {
   };
 }
 
+/** 用户纠正记录：AI自我学习的数据来源 */
+export interface LearningCorrection {
+  /** 纠正类型 */
+  type: "unblock" | "misjudge" | "manual_blacklist";
+  /** 评论原文（截取前200字） */
+  message: string;
+  /** AI原始判定理由 (unblock/misjudge 时有效) */
+  aiReason?: string;
+  /** AI原始判定严重度 */
+  aiSeverity?: string;
+  /** 用户名 */
+  uname: string;
+  /** 时间戳 */
+  timestamp: number;
+  /** 视频标题 */
+  videoTitle?: string;
+}
+
 /** 用户自定义过滤规则 */
 export interface FilterConfig {
   apiKey: string;
@@ -72,6 +90,16 @@ export interface FilterConfig {
   sendMid: boolean;
   /** 发送请求时附带视频简介 */
   sendVideoDesc: boolean;
+  /** 启用AI自我学习：根据用户纠正行为调整判定 */
+  learningEnabled: boolean;
+  /** AI凝练的学习画像（注入System Prompt的核心片段，由AI持续维护，最长300字） */
+  learnedProfile: string;
+  /** 学习记录（最近500条纠正，UI展示+AI学习用） */
+  learningCorrections: LearningCorrection[];
+  /** 上次更新画像时已处理的记录数（新累积 ≥20 条触发下次更新） */
+  lastRefinedCount: number;
+  /** 知识库：用户手动添加的辅助判定条目（如"XX是对XX的歧视性称呼"） */
+  knowledgeBase: string[];
 }
 
 /** AI判定结果: 单条评论的违规判定 */
@@ -162,4 +190,9 @@ export const DEFAULT_CONFIG: FilterConfig = {
   sendUname: false,
   sendMid: false,
   sendVideoDesc: false,
+  learningEnabled: true,
+  learnedProfile: "",
+  learningCorrections: [],
+  lastRefinedCount: 0,
+  knowledgeBase: [],
 };

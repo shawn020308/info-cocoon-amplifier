@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         信息茧房放大器 - B站降智评论过滤器
 // @namespace    ruozhi-filter
-// @version      0.2.2
+// @version      0.2.4
 // @author       ruozhi-filter
 // @description  AI驱动：自动识别并折叠B站评论区中的降智/引战言论
 // @license      MIT
@@ -19,7 +19,15 @@
     apiKey: "",
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-chat",
-    prompt: "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
+    prompt: `请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。
+
+违规判定维度：
+- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
+- **人身攻击**：针对个人的侮辱、谩骂、诅咒
+- **引战/煽动**：故意挑起争端，使用极端化言论
+- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
+- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
     foldMode: "classic",
     enableAI: true,
     enableBlacklist: true,
@@ -30,12 +38,11 @@
     sendUname: false,
     sendMid: false,
     sendVideoDesc: false,
-    filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
-- **人身攻击**：针对个人的侮辱、谩骂、诅咒
-- **引战/煽动**：故意挑起争端，使用极端化言论
-- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
-- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`
+    learningEnabled: true,
+    learnedProfile: "",
+    learningCorrections: [],
+    lastRefinedCount: 0,
+    knowledgeBase: []
   };
   let _devMode = false;
   function setDevMode(v) {
@@ -47,18 +54,310 @@
   function warn(tag, ...args) {
     if (_devMode) console.warn(tag, ...args);
   }
+  let _config = null;
+  function getConfig() {
+    if (_config) return _config;
+    try {
+      const raw = GM_getValue("ruozhi-config", "");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.foldMode === "boolean") {
+          parsed.foldMode = parsed.foldMode ? "classic" : "none";
+        }
+        if (parsed.blacklistConfirm === void 0) {
+          parsed.blacklistConfirm = true;
+        }
+        if (parsed.devMode === void 0) {
+          parsed.devMode = false;
+        }
+        if (parsed.filterDimensions) {
+          parsed.prompt = (parsed.prompt || "") + "\n\n违规判定维度：\n" + parsed.filterDimensions;
+          delete parsed.filterDimensions;
+        }
+        const merged = { ...DEFAULT_CONFIG, ...parsed };
+        setDevMode(merged.devMode);
+        _config = merged;
+        return merged;
+      }
+    } catch (e) {
+      console.error("[ruozhi-filter]", "❌ 配置加载失败:", e);
+    }
+    return {
+      apiKey: "",
+      apiEndpoint: "https://api.deepseek.com/chat/completions",
+      model: "deepseek-chat",
+      prompt: "",
+      foldMode: "classic",
+      enableAI: true,
+      enableBlacklist: true,
+      blacklistConfirm: true,
+      devMode: false,
+      blacklistStrictness: 1,
+      pricePerMToken: 1.1,
+      sendUname: false,
+      sendMid: false,
+      sendVideoDesc: false,
+      learningEnabled: true,
+      learnedProfile: "",
+      learningCorrections: [],
+      lastRefinedCount: 0,
+      knowledgeBase: []
+    };
+  }
+  function refreshConfig(cfg) {
+    _config = cfg;
+    setDevMode(cfg.devMode);
+  }
+  const currentContext = {
+    oid: 0,
+    videoTitle: "",
+    videoDesc: ""
+  };
+  function updateContext(ctx) {
+    if (ctx.oid) currentContext.oid = ctx.oid;
+    if (ctx.videoTitle) currentContext.videoTitle = ctx.videoTitle;
+    if (ctx.videoDesc) currentContext.videoDesc = ctx.videoDesc;
+  }
+  const TAG$8 = "[ruozhi-filter]";
+  const MAX_CORRECTIONS = 500;
+  const REFINE_THRESHOLD = 20;
+  const MAX_PROFILE_LENGTH = 300;
+  let refineCallback = null;
+  function setRefineCallback(cb) {
+    refineCallback = cb;
+  }
+  let refining = false;
+  function recordLearning(correction) {
+    try {
+      const config = getConfig();
+      if (!config.learningEnabled) return;
+      if (!Array.isArray(config.learningCorrections)) {
+        config.learningCorrections = [];
+      }
+      const entry = {
+        ...correction,
+        message: correction.message.slice(0, 200),
+        timestamp: Date.now()
+      };
+      const dupIdx = config.learningCorrections.findIndex(
+        (c) => c.type === entry.type && c.message.slice(0, 50) === entry.message.slice(0, 50)
+      );
+      if (dupIdx >= 0) {
+        config.learningCorrections.splice(dupIdx, 1);
+      }
+      config.learningCorrections.unshift(entry);
+      if (config.learningCorrections.length > MAX_CORRECTIONS) {
+        config.learningCorrections.length = MAX_CORRECTIONS;
+      }
+      const newSinceLast = config.learningCorrections.length - (config.lastRefinedCount ?? 0);
+      persist(config);
+      log(
+        TAG$8,
+        `🧠 学习记录: ${entry.type} | 总${config.learningCorrections.length}条 | 新${newSinceLast}条 | 画像${config.learnedProfile ? "✓" : "✗"}`
+      );
+      if (newSinceLast >= REFINE_THRESHOLD && refineCallback && !refining) {
+        refining = true;
+        refineCallback().finally(() => {
+          refining = false;
+        });
+      }
+    } catch (err) {
+      console.warn(TAG$8, "⚠️ 学习记录失败:", err);
+    }
+  }
+  function buildLearningPrompt() {
+    try {
+      const config = getConfig();
+      if (!config.learningEnabled) return "";
+      if (config.learnedProfile && typeof config.learnedProfile === "string") {
+        return `
+
+[用户过滤画像] ${config.learnedProfile}`;
+      }
+      const records = config.learningCorrections;
+      if (!Array.isArray(records) || records.length === 0) return "";
+      const unblockCount = records.filter(
+        (c) => c.type === "unblock" || c.type === "misjudge"
+      ).length;
+      const manualCount = records.filter(
+        (c) => c.type === "manual_blacklist"
+      ).length;
+      return `
+
+[用户学习反馈] 已收集${records.length}条纠正（误判${unblockCount}/漏判${manualCount}），攒够${REFINE_THRESHOLD}条后将自动生成学习画像。请暂时参考这些纠正调整判定。`;
+    } catch {
+      return "";
+    }
+  }
+  function shouldRefineProfile() {
+    try {
+      const config = getConfig();
+      if (!config.learningEnabled) return false;
+      const records = config.learningCorrections;
+      if (!Array.isArray(records)) return false;
+      const newCount = records.length - (config.lastRefinedCount ?? 0);
+      return newCount >= REFINE_THRESHOLD;
+    } catch {
+      return false;
+    }
+  }
+  function buildRefinementInstruction() {
+    try {
+      const config = getConfig();
+      const records = config.learningCorrections;
+      if (!Array.isArray(records) || records.length === 0) return "";
+      const currentProfile = config.learnedProfile || "（尚无画像）";
+      const newCount = records.length - (config.lastRefinedCount ?? 0);
+      if (newCount < REFINE_THRESHOLD) return "";
+      const correctionLines = records.map((c) => {
+        const typeLabel = c.type === "manual_blacklist" ? "拉黑" : "放过";
+        const aiInfo = c.aiReason ? ` #曾判定:${c.aiReason.slice(0, 20)}` : "";
+        return `[${typeLabel}]「${c.message.slice(0, 60)}」${aiInfo}`;
+      });
+      const totalTokens = correctionLines.join("\n").length;
+      const truncated = totalTokens > 6e3 ? correctionLines.slice(
+        0,
+        Math.floor(6e3 / (totalTokens / correctionLines.length))
+      ) : correctionLines;
+      return `
+
+--- 学习画像更新请求 ---
+当前画像：${currentProfile}
+
+全部纠正记录（${records.length}条，按时间倒序）：
+[放过] = 用户恢复了AI误判的内容（这些不应被过滤）
+[拉黑] = 用户手动拉黑了AI漏判的内容（这些应被过滤）
+${truncated.join("\n")}
+
+请根据以上记录，输出 refinedProfile：
+- 应过滤：基于[拉黑]案例，归纳用户明确不想看的内容类型
+- 应放过：基于[放过]案例，归纳用户想保留的内容类型
+- 立场：一句话概括用户整体倾向
+
+在JSON响应中增加 "refinedProfile" 字段。`;
+    } catch {
+      return "";
+    }
+  }
+  function applyRefinedProfile(profile) {
+    var _a;
+    if (!profile || typeof profile !== "string" || profile.trim().length < 10)
+      return;
+    try {
+      const config = getConfig();
+      const trimmed = profile.trim().slice(0, MAX_PROFILE_LENGTH);
+      config.learnedProfile = trimmed;
+      config.lastRefinedCount = ((_a = config.learningCorrections) == null ? void 0 : _a.length) ?? 0;
+      persist(config);
+      log(
+        TAG$8,
+        `✅ 画像已更新 (${trimmed.length}字) | 已处理${config.lastRefinedCount}条 | 新画像: ${trimmed.slice(0, 80)}…`
+      );
+    } catch (err) {
+      console.warn(TAG$8, "⚠️ 画像保存失败:", err);
+    }
+  }
+  function persist(config) {
+    try {
+      const json = JSON.stringify(config);
+      GM_setValue("ruozhi-config", json);
+      const verify = GM_getValue("ruozhi-config", "");
+      if (!verify || verify.length < 10) {
+        console.error(TAG$8, "❌ 持久化验证失败: 写入后读取为空");
+      }
+    } catch (e) {
+      console.error(TAG$8, "❌ 持久化失败:", e);
+    }
+  }
+  function getLearnedProfile() {
+    try {
+      const profile = getConfig().learnedProfile;
+      return typeof profile === "string" ? profile : "";
+    } catch {
+      return "";
+    }
+  }
+  function getPendingCount() {
+    try {
+      const config = getConfig();
+      const records = config.learningCorrections;
+      if (!Array.isArray(records)) return 0;
+      return Math.max(0, records.length - (config.lastRefinedCount ?? 0));
+    } catch {
+      return 0;
+    }
+  }
+  function getLearningRecords() {
+    try {
+      const records = getConfig().learningCorrections;
+      return Array.isArray(records) ? [...records] : [];
+    } catch {
+      return [];
+    }
+  }
+  function getLearningStats() {
+    try {
+      const records = getConfig().learningCorrections;
+      if (!Array.isArray(records)) {
+        return { total: 0, unblockCount: 0, misjudgeCount: 0, manualCount: 0 };
+      }
+      return {
+        total: records.length,
+        unblockCount: records.filter((c) => c.type === "unblock").length,
+        misjudgeCount: records.filter((c) => c.type === "misjudge").length,
+        manualCount: records.filter((c) => c.type === "manual_blacklist").length
+      };
+    } catch {
+      return { total: 0, unblockCount: 0, misjudgeCount: 0, manualCount: 0 };
+    }
+  }
+  function removeLearning(index) {
+    try {
+      const config = getConfig();
+      if (!Array.isArray(config.learningCorrections)) return;
+      if (index >= 0 && index < config.learningCorrections.length) {
+        config.learningCorrections.splice(index, 1);
+        if (typeof config.lastRefinedCount === "number" && config.lastRefinedCount > config.learningCorrections.length) {
+          config.lastRefinedCount = config.learningCorrections.length;
+        }
+        persist(config);
+      }
+    } catch {
+    }
+  }
+  function clearLearning() {
+    try {
+      const config = getConfig();
+      config.learnedProfile = "";
+      config.learningCorrections = [];
+      config.lastRefinedCount = 0;
+      persist(config);
+    } catch {
+    }
+  }
   const TAG$7 = "[ruozhi-filter]";
   function buildSystemPrompt(config, ctx) {
     const ctxParts = [`视频：${ctx.videoTitle}`];
     if (config.sendVideoDesc) {
       ctxParts.push(`简介：${ctx.videoDesc.slice(0, 200)}`);
     }
-    return `判断评论是否违规。
-规则：${config.prompt}
-维度：
-${config.filterDimensions}
-上下文：${ctxParts.join("；")}
+    const learningSection = buildLearningPrompt();
+    const refinementSection = buildRefinementInstruction();
+    const kb = config.knowledgeBase;
+    const kbSection = Array.isArray(kb) && kb.length > 0 ? `
 
+[知识库] 以下为已知的语境信息，辅助判断反讽/引用/特定称呼：
+${kb.map((e, i) => `${i + 1}. ${e}`).join("\n")}` : "";
+    const hasProfile = config.learnedProfile && typeof config.learnedProfile === "string";
+    return `判断评论是否违规。
+
+${hasProfile ? `[最高优先级] 用户过滤画像（与下方规则冲突时，以画像为准）：
+${config.learnedProfile}
+
+` : ""}规则：${config.prompt}
+上下文：${ctxParts.join("；")}${kbSection}${hasProfile ? "" : learningSection}${refinementSection}
+
+${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规则与画像冲突时，以用户画像为准判定。" : ""}
 仅输出JSON（无markdown标记）：
 {"verdicts":[{"i":索引,"violation":true,"reason":"理由","severity":"low|medium|high|block"}]}
 只输出违规评论，无违规返回{"verdicts":[]}`;
@@ -81,16 +380,21 @@ ${config.filterDimensions}
     if (!config.apiKey || replies.length === 0) return { verdicts: [] };
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(config, replies);
+    const isRefining = shouldRefineProfile();
+    if (isRefining) {
+      log(TAG$7, `🧠 触发画像更新 (评论判定附带)`);
+    }
     log(
       TAG$7,
       "📤 请求体:",
       JSON.stringify({
         model: config.model,
-        systemPrompt,
+        systemPrompt: systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
         userMessage: JSON.parse(userMessage),
         temperature: 0.1,
-        max_tokens: 4096,
-        response_format: { type: "json_object" }
+        max_tokens: isRefining ? 2560 : 2048,
+        response_format: { type: "json_object" },
+        isRefining
       })
     );
     const rpidByIndex = new Map(replies.map((r, i) => [i, r.rpid]));
@@ -110,7 +414,7 @@ ${config.filterDimensions}
             { role: "user", content: userMessage }
           ],
           temperature: 0,
-          max_tokens: 2048,
+          max_tokens: isRefining ? 4096 : 2048,
           response_format: { type: "json_object" }
         })
       });
@@ -141,6 +445,9 @@ ${config.filterDimensions}
           reason: v.reason ?? "",
           severity: v.severity ?? "medium"
         }));
+        if (parsed.refinedProfile && typeof parsed.refinedProfile === "string") {
+          applyRefinedProfile(parsed.refinedProfile);
+        }
         return { verdicts, usage };
       } catch (e) {
         console.error(TAG$7, "❌ AI 返回解析失败:", e);
@@ -169,6 +476,91 @@ ${config.filterDimensions}
       return response.ok;
     } catch {
       return false;
+    }
+  }
+  async function refineProfileNow() {
+    return _refineProfile(false);
+  }
+  async function forceRefineProfile() {
+    return _refineProfile(true);
+  }
+  async function _refineProfile(force) {
+    var _a, _b, _c;
+    if (!force && !shouldRefineProfile()) {
+      log(TAG$7, "🧠 refineProfile: 未达阈值，跳过");
+      return;
+    }
+    const config = getConfig();
+    if (!config.apiKey) {
+      warn(TAG$7, "⚠️ 画像更新跳过: 未配置API Key");
+      return;
+    }
+    const records = config.learningCorrections;
+    if (!Array.isArray(records) || records.length === 0) {
+      warn(TAG$7, "⚠️ 画像更新跳过: 无学习记录");
+      return;
+    }
+    const savedCount = config.lastRefinedCount;
+    if (force) {
+      config.lastRefinedCount = 0;
+    }
+    const instruction = buildRefinementInstruction();
+    if (force) {
+      config.lastRefinedCount = savedCount;
+    }
+    if (!instruction) {
+      warn(TAG$7, "⚠️ 画像更新跳过: 无更新指令");
+      return;
+    }
+    log(
+      TAG$7,
+      `🧠 ${force ? "强制" : "自动"}画像更新中... (指令${instruction.length}字)`
+    );
+    const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+    try {
+      const response = await fetcher(config.apiEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            {
+              role: "system",
+              content: '你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。\n\n纠正记录说明：\n- "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）\n- "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）\n\n请严格按以下格式输出画像（${MAX_PROFILE_LENGTH}字以内）：\n应过滤：[用户明确不想看的内容，基于拉黑案例归纳]\n应放过：[用户想保留的内容，基于放过案例归纳]\n立场：[一句话概括用户倾向]\n\n仅输出JSON：{"refinedProfile":"..."}'
+            },
+            { role: "user", content: instruction }
+          ],
+          temperature: 0,
+          max_tokens: 512,
+          response_format: { type: "json_object" }
+        })
+      });
+      if (!response.ok) {
+        console.error(TAG$7, `❌ 画像更新API ${response.status}`);
+        return;
+      }
+      const data = await response.json();
+      const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
+      if (!content) {
+        warn(TAG$7, "⚠️ 画像更新: AI 返回空内容");
+        return;
+      }
+      let jsonStr = content.trim();
+      if (jsonStr.startsWith("```json")) jsonStr = jsonStr.slice(7);
+      if (jsonStr.startsWith("```")) jsonStr = jsonStr.slice(3);
+      if (jsonStr.endsWith("```")) jsonStr = jsonStr.slice(0, -3);
+      jsonStr = jsonStr.trim();
+      const parsed = JSON.parse(jsonStr);
+      if (parsed.refinedProfile && typeof parsed.refinedProfile === "string") {
+        applyRefinedProfile(parsed.refinedProfile);
+      } else {
+        warn(TAG$7, "⚠️ 画像更新: 未收到 refinedProfile 字段");
+      }
+    } catch (err) {
+      console.error(TAG$7, "❌ 画像更新失败:", err);
     }
   }
   const instanceOfAny = (object, constructors) => constructors.some((c) => object instanceof c);
@@ -692,64 +1084,6 @@ ${config.filterDimensions}
     ruozhiStats.severityCounts = {};
     ruozhiStats.lastUpdate = 0;
     saveStats(ruozhiStats);
-  }
-  let _config = null;
-  function getConfig() {
-    if (_config) return _config;
-    try {
-      const raw = GM_getValue("ruozhi-config", "");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed.foldMode === "boolean") {
-          parsed.foldMode = parsed.foldMode ? "classic" : "none";
-        }
-        if (parsed.blacklistConfirm === void 0) {
-          parsed.blacklistConfirm = true;
-        }
-        if (parsed.devMode === void 0) {
-          parsed.devMode = false;
-        }
-        setDevMode(parsed.devMode);
-        _config = parsed;
-        return parsed;
-      }
-    } catch {
-    }
-    return {
-      apiKey: "",
-      apiEndpoint: "https://api.deepseek.com/chat/completions",
-      model: "deepseek-chat",
-      prompt: "",
-      foldMode: "classic",
-      enableAI: true,
-      enableBlacklist: true,
-      blacklistConfirm: true,
-      devMode: false,
-      blacklistStrictness: 1,
-      pricePerMToken: 1.1,
-      sendUname: false,
-      sendMid: false,
-      sendVideoDesc: false,
-      filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
-- **人身攻击**：针对个人的侮辱、谩骂、诅咒
-- **引战/煽动**：故意挑起争端，使用极端化言论
-- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
-    };
-  }
-  function refreshConfig(cfg) {
-    _config = cfg;
-    setDevMode(cfg.devMode);
-  }
-  const currentContext = {
-    oid: 0,
-    videoTitle: "",
-    videoDesc: ""
-  };
-  function updateContext(ctx) {
-    if (ctx.oid) currentContext.oid = ctx.oid;
-    if (ctx.videoTitle) currentContext.videoTitle = ctx.videoTitle;
-    if (ctx.videoDesc) currentContext.videoDesc = ctx.videoDesc;
   }
   function extractVideoInfo() {
     var _a, _b, _c, _d;
@@ -1282,6 +1616,14 @@ ${config.filterDimensions}
             const hash = commentHash(info.message, info.mid);
             await removeFromBlacklist(blRecord.mid);
             await deleteCommentFromCache(hash);
+            recordLearning({
+              type: "unblock",
+              message: info.message,
+              aiReason: blRecord.reason,
+              aiSeverity: blRecord.severity,
+              uname: info.uname,
+              videoTitle: currentContext.videoTitle
+            });
             el.style.display = "";
             foldElDiv.remove();
             origElDiv.remove();
@@ -1300,6 +1642,14 @@ ${config.filterDimensions}
           e.stopPropagation();
           const hash = commentHash(info.message, info.mid);
           await deleteCommentFromCache(hash);
+          recordLearning({
+            type: "misjudge",
+            message: info.message,
+            aiReason: verdict.reason,
+            aiSeverity: verdict.severity,
+            uname: info.uname,
+            videoTitle: currentContext.videoTitle
+          });
           el.style.display = "";
           foldElDiv.remove();
           origElDiv.remove();
@@ -1404,6 +1754,12 @@ ${config.filterDimensions}
           timestamp: Date.now(),
           severity: "block",
           source: "manual"
+        });
+        recordLearning({
+          type: "manual_blacklist",
+          message: info.message,
+          uname: info.uname,
+          videoTitle: currentContext.videoTitle
         });
         log(TAG$4, `🚫 手动拉黑: ${info.uname}`);
         if (config.foldMode === "none") {
@@ -1866,6 +2222,10 @@ ${config.filterDimensions}
         if (typeof parsed.foldMode === "boolean") {
           parsed.foldMode = parsed.foldMode ? "classic" : "none";
         }
+        if (parsed.filterDimensions) {
+          parsed.prompt = (parsed.prompt || "") + "\n\n违规判定维度：\n" + parsed.filterDimensions;
+          delete parsed.filterDimensions;
+        }
         return { ...DEFAULT_CONFIG, ...parsed };
       }
     } catch {
@@ -2000,6 +2360,8 @@ ${config.filterDimensions}
     <button class="ruozhi-tab active" data-tab="settings" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#667eea;border-bottom:2px solid #667eea">⚙️ 设置</button>
     <button class="ruozhi-tab" data-tab="stats" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📊 统计</button>
     <button class="ruozhi-tab" data-tab="blacklist" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📋 黑名单</button>
+    <button class="ruozhi-tab" data-tab="learning" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">🧠 学习</button>
+    <button class="ruozhi-tab" data-tab="knowledge" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📚 知识库</button>
   </div>
 
   <div id="ruozhi-tab-settings" style="overflow-y:auto;flex:1;padding:12px 16px">
@@ -2014,14 +2376,9 @@ ${config.filterDimensions}
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
     <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt</label>
-      <textarea id="ruozhi-prompt" rows="3"
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt（含违规判定维度）</label>
+      <textarea id="ruozhi-prompt" rows="8"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">${escapeHtml(config.prompt)}</textarea>
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🎯 违规判定维度</label>
-      <textarea id="ruozhi-dimensions" rows="5"
-        style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace">${escapeHtml(config.filterDimensions)}</textarea>
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -2075,6 +2432,16 @@ ${config.filterDimensions}
         附带视频简介
       </label>
     </div>
+    <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">🧠 AI自我学习</div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="ruozhi-learning" type="checkbox" ${config.learningEnabled ? "checked" : ""}>
+        启用自我学习（根据纠正行为自动调整判定）
+      </label>
+    </div>
+    <div id="ruozhi-learning-info" style="margin-bottom:12px;margin-left:24px;font-size:11px;color:#999">
+      记录「取消拉黑」「误判展开」「手动拉黑」行为，自动优化AI判定策略
+    </div>
     <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">🛠️ 开发者</div>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -2091,6 +2458,9 @@ ${config.filterDimensions}
       <button id="ruozhi-clear-stats" style="flex:1;padding:6px;border:1px solid #e6a23c;border-radius:6px;background:#fff;color:#e6a23c;font-size:12px;cursor:pointer">📊 重置统计</button>
       <button id="ruozhi-clear-bl" style="flex:1;padding:6px;border:1px solid #f56c6c;border-radius:6px;background:#fff;color:#f56c6c;font-size:12px;cursor:pointer">⚠️ 清空黑名单</button>
     </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button id="ruozhi-clear-learning" style="flex:1;padding:6px;border:1px solid #e6a23c;border-radius:6px;background:#fff;color:#e6a23c;font-size:12px;cursor:pointer">🧠 清除学习记录</button>
+    </div>
     <div id="ruozhi-status" style="margin-top:8px;font-size:12px;color:#666;min-height:18px"></div>
   </div>
 
@@ -2103,6 +2473,23 @@ ${config.filterDimensions}
   <div id="ruozhi-tab-blacklist" style="display:none;overflow-y:auto;flex:1;max-height:400px">
     <div id="ruozhi-blacklist-content" style="padding:8px 0">加载中...</div>
   </div>
+
+  <div id="ruozhi-tab-learning" style="display:none;overflow-y:auto;flex:1;max-height:400px">
+    <div id="ruozhi-learning-content" style="padding:8px 0">加载中...</div>
+  </div>
+
+  <div id="ruozhi-tab-knowledge" style="display:none;overflow-y:auto;flex:1;padding:12px 16px">
+    <div style="font-size:12px;color:#666;margin-bottom:8px">添加语境知识，辅助AI判断反讽/引用/特定称呼，避免误伤友军</div>
+    <div style="margin-bottom:8px;display:flex;gap:6px">
+      <input id="ruozhi-kb-input" type="text" placeholder="例如：XX是对XX的歧视性称呼"
+        style="flex:1;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;box-sizing:border-box">
+      <button id="ruozhi-kb-add" style="padding:6px 12px;border:none;border-radius:6px;background:#667eea;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">添加</button>
+    </div>
+    <div id="ruozhi-kb-list" style="font-size:11px;color:#666">
+      ${(config.knowledgeBase ?? []).map((e, i) => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #f5f5f5"><span style="flex:1;word-break:break-word">📌 ${escapeHtml(e)}</span><button class="ruozhi-kb-del" data-index="${i}" style="padding:1px 6px;font-size:10px;background:none;border:1px solid #ddd;border-radius:3px;color:#999;cursor:pointer">✕</button></div>`).join("")}
+    </div>
+    <div id="ruozhi-kb-status" style="margin-top:8px;font-size:12px;color:#666;min-height:18px"></div>
+  </div>
 </div>`;
   }
   function escapeAttr(s) {
@@ -2114,7 +2501,7 @@ ${config.filterDimensions}
     return div.innerHTML;
   }
   function bindPanelEvents(root, config, onConfigChange) {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f;
     const tabs = root.querySelectorAll(".ruozhi-tab");
     tabs.forEach((tab) => {
       tab.addEventListener("click", async () => {
@@ -2131,29 +2518,44 @@ ${config.filterDimensions}
         );
         const statsEl = root.querySelector("#ruozhi-tab-stats");
         const blEl = root.querySelector("#ruozhi-tab-blacklist");
+        const learningEl = root.querySelector(
+          "#ruozhi-tab-learning"
+        );
+        const knowledgeEl = root.querySelector(
+          "#ruozhi-tab-knowledge"
+        );
+        settingsEl.style.display = "none";
+        statsEl.style.display = "none";
+        blEl.style.display = "none";
+        learningEl.style.display = "none";
+        knowledgeEl.style.display = "none";
         if (tabName === "settings") {
           settingsEl.style.display = "block";
-          statsEl.style.display = "none";
-          blEl.style.display = "none";
         } else if (tabName === "stats") {
-          settingsEl.style.display = "none";
           statsEl.style.display = "block";
-          blEl.style.display = "none";
           updateStatsPanel();
-        } else {
-          settingsEl.style.display = "none";
-          statsEl.style.display = "none";
+        } else if (tabName === "blacklist") {
           blEl.style.display = "block";
           const contentEl = root.querySelector("#ruozhi-blacklist-content");
           if (contentEl) {
             contentEl.innerHTML = await buildBlacklistPanelHTML();
             bindBlacklistEvents(contentEl);
           }
+        } else if (tabName === "learning") {
+          learningEl.style.display = "block";
+          const contentEl = root.querySelector("#ruozhi-learning-content");
+          if (contentEl) {
+            contentEl.innerHTML = buildLearningPanelHTML();
+            bindLearningEvents(contentEl);
+          }
+        } else if (tabName === "knowledge") {
+          knowledgeEl.style.display = "block";
+          bindKnowledgeEvents(root);
         }
       });
     });
     (_a = root.querySelector("#ruozhi-save")) == null ? void 0 : _a.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l, _m;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g, _h, _i, _j, _k, _l, _m;
       const newConfig = {
         ...config,
         apiKey: ((_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value) ?? "",
@@ -2161,7 +2563,7 @@ ${config.filterDimensions}
         prompt: ((_c2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _c2.value) ?? config.prompt,
         enableAI: ((_d2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _d2.checked) ?? true,
         foldMode: ((_e2 = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e2.value) ?? "classic",
-        enableBlacklist: ((_f = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f.checked) ?? true,
+        enableBlacklist: ((_f2 = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f2.checked) ?? true,
         blacklistConfirm: ((_g = root.querySelector("#ruozhi-bl-confirm")) == null ? void 0 : _g.checked) ?? true,
         devMode: ((_h = root.querySelector("#ruozhi-dev-mode")) == null ? void 0 : _h.checked) ?? false,
         pricePerMToken: parseFloat(
@@ -2170,7 +2572,7 @@ ${config.filterDimensions}
         sendUname: ((_j = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _j.checked) ?? false,
         sendMid: ((_k = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _k.checked) ?? false,
         sendVideoDesc: ((_l = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _l.checked) ?? false,
-        filterDimensions: ((_m = root.querySelector("#ruozhi-dimensions")) == null ? void 0 : _m.value) ?? config.filterDimensions
+        learningEnabled: ((_m = root.querySelector("#ruozhi-learning")) == null ? void 0 : _m.checked) ?? true
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -2211,6 +2613,11 @@ ${config.filterDimensions}
       if (blContent)
         blContent.innerHTML = '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
     });
+    (_f = root.querySelector("#ruozhi-clear-learning")) == null ? void 0 : _f.addEventListener("click", () => {
+      if (!confirm("确定要清除所有AI自我学习记录吗？此操作不可撤销。")) return;
+      clearLearning();
+      showStatus(root, "✅ AI学习记录已清除", "#28a745");
+    });
     root.addEventListener("click", (e) => {
       const target = e.target;
       if (!target.closest("#ruozhi-clear-stats")) return;
@@ -2225,6 +2632,22 @@ ${config.filterDimensions}
     if (el) {
       el.textContent = msg;
       el.style.color = color;
+    }
+  }
+  function refreshKBList(root) {
+    const list = root.querySelector("#ruozhi-kb-list");
+    if (!list) return;
+    try {
+      const raw = GM_getValue("ruozhi-config", "{}");
+      const config = JSON.parse(raw);
+      const kb = Array.isArray(config.knowledgeBase) ? config.knowledgeBase : [];
+      list.innerHTML = kb.map(
+        (e, i) => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #f5f5f5"><span style="flex:1;word-break:break-word">📌 ${escapeHtml(e)}</span><button class="ruozhi-kb-del" data-index="${i}" style="padding:1px 6px;font-size:10px;background:none;border:1px solid #ddd;border-radius:3px;color:#999;cursor:pointer">✕</button></div>`
+      ).join("");
+      if (kb.length === 0) {
+        list.innerHTML = '<div style="text-align:center;color:#ccc;padding:16px">暂无知识条目</div>';
+      }
+    } catch {
     }
   }
   function updateStatsPanel() {
@@ -2263,6 +2686,17 @@ ${config.filterDimensions}
       </div>
     </div>
     <div style="margin-top:12px"><div style="font-weight:600;margin-bottom:8px;color:#333">🏷️ 违规分布</div>${sevHTML || '<div style="color:#999;text-align:center;padding:8px">暂无</div>'}</div>
+    ${(() => {
+    const ls = getLearningStats();
+    if (ls.total === 0) return "";
+    return `<div style="margin-top:12px"><div style="font-weight:600;margin-bottom:8px;color:#333">🧠 AI学习记录</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div style="background:#e8f5e9;padding:6px;border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:#66bb6a">${ls.unblockCount + ls.misjudgeCount}</div><div style="font-size:10px;color:#999">纠正误判</div></div>
+          <div style="background:#fff3e0;padding:6px;border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:#ff9800">${ls.manualCount}</div><div style="font-size:10px;color:#999">补充漏判</div></div>
+          <div style="background:#f3e5f5;padding:6px;border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:#ab47bc">${ls.total}</div><div style="font-size:10px;color:#999">总计</div></div>
+        </div>
+      </div>`;
+  })()}
     <div style="margin-top:12px;font-size:11px;color:#aaa;text-align:center">DeepSeek-chat ¥${price}/1M tokens · prompt: ${(s.promptTokens / 1e3).toFixed(1)}K · completion: ${(s.completionTokens / 1e3).toFixed(1)}K</div>`;
   }
   function bindBlacklistEvents(container) {
@@ -2278,9 +2712,203 @@ ${config.filterDimensions}
       });
     });
   }
+  function buildLearningPanelHTML() {
+    const records = getLearningRecords();
+    const profile = getLearnedProfile();
+    const pendingCount = getPendingCount();
+    const profileSection = profile ? `<div style="margin:0 8px 12px 8px;padding:10px 12px;background:linear-gradient(135deg,#f0f4ff,#f8f0ff);border:1px solid #d4c5f0;border-radius:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:12px;font-weight:700;color:#764ba2">🧠 AI学习画像（可编辑）</span>
+      <span style="font-size:10px;color:#999">每次API调用自动注入System Prompt</span>
+    </div>
+    <textarea id="ruozhi-profile-edit" rows="4" style="width:100%;padding:8px;border:1px solid #d4c5f0;border-radius:6px;font-size:12px;color:#555;resize:vertical;box-sizing:border-box;line-height:1.6;font-family:system-ui,sans-serif">${escapeHtml(profile)}</textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <div style="display:flex;gap:6px">
+        <button id="ruozhi-profile-save" style="padding:3px 12px;font-size:11px;border:none;border-radius:4px;background:#764ba2;color:#fff;cursor:pointer">💾 保存画像</button>
+        <button id="ruozhi-profile-regen" style="padding:3px 12px;font-size:11px;border:1px solid #e6a23c;border-radius:4px;background:#fff;color:#e6a23c;cursor:pointer" title="忽略阈值，立即用全部学习记录重新生成画像">🔄 重新生成</button>
+      </div>
+      ${pendingCount > 0 ? `<span style="font-size:10px;color:#e6a23c">⏳ 待处理纠正: ${pendingCount} 条（攒够20条后AI自动更新）</span>` : `<span style="font-size:10px;color:#67c23a">✅ 已同步（${records.length}条记录）</span>`}
+    </div>
+  </div>` : `<div style="margin:0 8px 12px 8px;padding:10px 12px;background:#f8f9fc;border:1px solid #e0e3e8;border-radius:8px;text-align:center">
+    <div style="font-size:12px;color:#999;margin-bottom:4px">🧠 尚无AI学习画像</div>
+    ${records.length > 0 ? `<div style="font-size:11px;color:#e6a23c">已收集 ${records.length} 条纠正，攒够20条后AI将自动生成画像</div>` : `<div style="font-size:11px;color:#ccc">执行「取消拉黑」「误判展开」「手动拉黑」后，AI将自动学习并生成画像</div>`}
+  </div>`;
+    if (records.length === 0) {
+      return profileSection;
+    }
+    const typeLabel = {
+      unblock: "↩️ 取消拉黑",
+      misjudge: "✅ 误判纠正",
+      manual_blacklist: "🚫 补充拉黑"
+    };
+    const typeColor = {
+      unblock: "#28a745",
+      misjudge: "#17a2b8",
+      manual_blacklist: "#d9534f"
+    };
+    const rows = records.map((r, i) => {
+      const date = new Date(r.timestamp).toLocaleString("zh-CN");
+      const label = typeLabel[r.type] ?? r.type;
+      const color = typeColor[r.type] ?? "#999";
+      const aiReasonHTML = r.aiReason ? `<div style="font-size:11px;color:#e6a23c;margin-top:2px">⚡ AI曾判定: ${escapeHtml(r.aiReason)}${r.aiSeverity ? ` (${r.aiSeverity})` : ""}</div>` : "";
+      return `
+      <div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:13px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="color:${color};font-weight:600;font-size:12px">${label}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:#ccc">${date}</span>
+            <button class="ruozhi-remove-learning" data-index="${i}"
+              style="padding:1px 6px;font-size:11px;background:none;border:1px solid #ddd;border-radius:3px;color:#999;cursor:pointer">
+              删除
+            </button>
+          </div>
+        </div>
+        <div style="color:#666;line-height:1.5;word-break:break-word">💬 ${escapeHtml(r.message)}</div>
+        ${aiReasonHTML}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span style="font-size:11px;color:#aaa">👤 ${escapeHtml(r.uname)}</span>
+          ${r.videoTitle ? `<span style="font-size:11px;color:#ccc">📺 ${escapeHtml(r.videoTitle.slice(0, 20))}${r.videoTitle.length > 20 ? "..." : ""}</span>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    const clearBtn = `<div style="padding:8px;text-align:center">
+    <button id="ruozhi-clear-learning-inline"
+      style="padding:4px 16px;font-size:12px;border:1px solid #f56c6c;border-radius:4px;background:#fff;color:#f56c6c;cursor:pointer">
+      ⚠️ 清空全部学习记录
+    </button>
+  </div>`;
+    return profileSection + rows + clearBtn;
+  }
+  function bindLearningEvents(container) {
+    container.querySelectorAll(".ruozhi-remove-learning").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const index = parseInt(btn.dataset.index ?? "-1");
+        if (index >= 0) {
+          removeLearning(index);
+          refreshLearningPanel(container);
+        }
+      });
+    });
+    const clearBtn = container.querySelector("#ruozhi-clear-learning-inline");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", () => {
+        if (!confirm("确定要清空所有AI学习记录吗？")) return;
+        clearLearning();
+        refreshLearningPanel(container);
+      });
+    }
+    const profileSaveBtn = container.querySelector("#ruozhi-profile-save");
+    const profileEdit = container.querySelector(
+      "#ruozhi-profile-edit"
+    );
+    const profileRegenBtn = container.querySelector("#ruozhi-profile-regen");
+    if (profileSaveBtn && profileEdit) {
+      profileSaveBtn.addEventListener("click", () => {
+        const val = profileEdit.value.trim();
+        if (!val) return;
+        try {
+          const config = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+          config.learnedProfile = val.slice(0, 300);
+          GM_setValue("ruozhi-config", JSON.stringify(config));
+          refreshConfig(config);
+          profileEdit.value = val.slice(0, 300);
+          const toast = document.createElement("div");
+          toast.textContent = "✅ 画像已保存";
+          Object.assign(toast.style, {
+            position: "fixed",
+            bottom: "80px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#28a745",
+            color: "#fff",
+            padding: "6px 16px",
+            borderRadius: "6px",
+            fontSize: "13px",
+            zIndex: "999999"
+          });
+          document.body.appendChild(toast);
+          setTimeout(() => toast.remove(), 2e3);
+        } catch {
+        }
+      });
+    }
+    if (profileRegenBtn) {
+      profileRegenBtn.addEventListener("click", async () => {
+        profileRegenBtn.textContent = "⏳ 生成中...";
+        profileRegenBtn.style.pointerEvents = "none";
+        try {
+          await forceRefineProfile();
+          refreshLearningPanel(container);
+        } catch {
+        } finally {
+          profileRegenBtn.textContent = "🔄 重新生成";
+          profileRegenBtn.style.pointerEvents = "";
+        }
+      });
+    }
+  }
+  function refreshLearningPanel(container) {
+    const contentEl = container.querySelector("#ruozhi-learning-content") ?? container;
+    contentEl.innerHTML = buildLearningPanelHTML();
+    bindLearningEvents(contentEl);
+  }
+  function bindKnowledgeEvents(root) {
+    var _a, _b, _c;
+    (_a = root.querySelector("#ruozhi-kb-add")) == null ? void 0 : _a.addEventListener("click", () => {
+      var _a2;
+      const input = root.querySelector("#ruozhi-kb-input");
+      const val = (_a2 = input == null ? void 0 : input.value) == null ? void 0 : _a2.trim();
+      if (!val) return;
+      try {
+        const config = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+        if (!Array.isArray(config.knowledgeBase)) config.knowledgeBase = [];
+        if (config.knowledgeBase.includes(val)) {
+          kbStatus(root, "⚠️ 该条目已存在", "#ffc107");
+          return;
+        }
+        config.knowledgeBase.push(val);
+        GM_setValue("ruozhi-config", JSON.stringify(config));
+        refreshConfig(config);
+        input.value = "";
+        refreshKBList(root);
+        kbStatus(root, "✅ 已添加", "#28a745");
+      } catch {
+      }
+    });
+    (_b = root.querySelector("#ruozhi-kb-input")) == null ? void 0 : _b.addEventListener("keydown", (e) => {
+      var _a2;
+      if (e.key === "Enter") {
+        (_a2 = root.querySelector("#ruozhi-kb-add")) == null ? void 0 : _a2.click();
+      }
+    });
+    (_c = root.querySelector("#ruozhi-kb-list")) == null ? void 0 : _c.addEventListener("click", (e) => {
+      const btn = e.target.closest(".ruozhi-kb-del");
+      if (!btn) return;
+      const idx = parseInt(btn.dataset.index ?? "-1");
+      if (idx < 0) return;
+      try {
+        const config = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+        if (Array.isArray(config.knowledgeBase)) {
+          config.knowledgeBase.splice(idx, 1);
+          GM_setValue("ruozhi-config", JSON.stringify(config));
+          refreshConfig(config);
+          refreshKBList(root);
+        }
+      } catch {
+      }
+    });
+  }
+  function kbStatus(root, msg, color) {
+    const el = root.querySelector("#ruozhi-kb-status");
+    if (el) {
+      el.textContent = msg;
+      el.style.color = color;
+    }
+  }
   const TAG = "[ruozhi-filter]";
   async function main() {
     log(TAG, "🚀 插件启动中...");
+    setRefineCallback(refineProfileNow);
     initMemoryCache().catch(() => {
     });
     let config = loadConfig();

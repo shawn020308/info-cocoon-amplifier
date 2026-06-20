@@ -13,11 +13,16 @@ import {
 } from "./interceptor";
 import { pruneCache, getBlacklistCount, initMemoryCache } from "./db";
 import { log } from "./debug";
+import { refineProfileNow } from "./api";
+import { setRefineCallback } from "./learning";
 
 const TAG = "[ruozhi-filter]";
 
 async function main(): Promise<void> {
   log(TAG, "🚀 插件启动中...");
+
+  // ★ 连接学习模块 → 画像更新（独立于评论扫描）
+  setRefineCallback(refineProfileNow);
 
   // ★ 优先加载内存缓存（黑名单 + 缓存），使后续扫描能瞬间判定
   initMemoryCache().catch(() => {});

@@ -6,6 +6,7 @@ import { getConfig, currentContext } from "./config";
 import { addToBlacklist } from "./db";
 import { hideEl, foldEl } from "./fold-ui";
 import { log } from "./debug";
+import { recordLearning } from "./learning";
 
 const TAG = "[ruozhi-filter]";
 
@@ -115,6 +116,14 @@ export function injectManualBlacklistButton(
         timestamp: Date.now(),
         severity: "block",
         source: "manual",
+      });
+
+      // ★ AI自我学习：记录手动拉黑（AI漏判）
+      recordLearning({
+        type: "manual_blacklist",
+        message: info.message,
+        uname: info.uname,
+        videoTitle: currentContext.videoTitle,
       });
 
       log(TAG, `🚫 手动拉黑: ${info.uname}`);
