@@ -52,8 +52,8 @@ export interface FilterConfig {
   apiEndpoint: string;
   model: string;
   prompt: string;
-  /** 是否开启折叠模式(而非完全隐藏) */
-  foldMode: boolean;
+  /** 折叠样式: "none"=完全隐藏, "classic"=黄色警告条, "light"=极简灰线 */
+  foldMode: "none" | "classic" | "light";
   /** 是否启用AI过滤 */
   enableAI: boolean;
   /** 是否启用本地黑名单 */
@@ -143,7 +143,7 @@ export const DEFAULT_CONFIG: FilterConfig = {
   model: "deepseek-chat",
   prompt:
     "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
-  foldMode: true,
+  foldMode: "classic",
   enableAI: true,
   enableBlacklist: true,
   blacklistStrictness: 1,

@@ -5,7 +5,7 @@ import { openDB, type IDBPDatabase } from "idb";
 import type { BlacklistRecord, CacheEntry } from "./types";
 
 const DB_NAME = "ruozhi-filter-db";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -34,6 +34,16 @@ function getDB(): Promise<IDBPDatabase> {
         if (oldVersion < 3) {
           // v3: 添加 source 字段 (manual/auto)，旧数据默认为 auto
           // 新字段自动兼容，无需重建store
+        }
+        if (oldVersion < 4) {
+          // v4: 改回 mid 作为主键 (username hash 不稳定，用户可改名)
+          if (db.objectStoreNames.contains("blacklist")) {
+            db.deleteObjectStore("blacklist");
+          }
+          const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
+          bl.createIndex("timestamp", "timestamp");
+          bl.createIndex("severity", "severity");
+          bl.createIndex("uid", "uid");
         }
         if (!db.objectStoreNames.contains("cache")) {
           const c = db.createObjectStore("cache", { keyPath: "hash" });
@@ -69,24 +79,30 @@ export function commentHash(message: string, mid: number): string {
 
 // ---------- 黑名单操作 ----------
 
-/** 查询用户是否在黑名单中 (key = username hash) */
+/** 查询用户是否在黑名单中 (key = mid, fallback to username hash) */
 export async function isBlacklisted(
   mid: number,
   uname: string,
 ): Promise<BlacklistRecord | null> {
   const db = await getDB();
-  // 优先用真实mid查询，如果mid为0则用username hash
-  const key = mid > 0 ? mid : blacklistKey(uname);
-  const record = await db.get("blacklist", key);
-  return record ?? null;
+  // 优先用 mid（B站UID唯一且稳定）
+  if (mid > 0) {
+    const record = await db.get("blacklist", mid);
+    if (record) return record;
+  }
+  // fallback: username hash (mid为0时)
+  return (
+    (await db.getFromIndex("blacklist", "uid", blacklistKey(uname))) ?? null
+  );
 }
 
-/** 将用户加入黑名单 */
+/** 将用户加入黑名单 (key = mid, fallback to username hash) */
 export async function addToBlacklist(record: BlacklistRecord): Promise<void> {
   const db = await getDB();
-  // uid = username hash (stable key we can always compute)
   const uid = blacklistKey(record.uname);
-  await db.put("blacklist", { ...record, uid });
+  // B站新UI的Shadow DOM不总是暴露data-mid，此时用username hash做key
+  const key = record.mid > 0 ? record.mid : uid;
+  await db.put("blacklist", { ...record, mid: key, uid });
 }
 
 /** 获取所有黑名单记录 */
@@ -95,10 +111,10 @@ export async function getAllBlacklist(): Promise<BlacklistRecord[]> {
   return db.getAll("blacklist");
 }
 
-/** 从黑名单移除 (by username hash) */
-export async function removeFromBlacklist(uid: number): Promise<void> {
+/** 从黑名单移除 (by mid) */
+export async function removeFromBlacklist(mid: number): Promise<void> {
   const db = await getDB();
-  await db.delete("blacklist", uid);
+  await db.delete("blacklist", mid);
 }
 
 /** 获取黑名单总数 */

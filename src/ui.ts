@@ -11,6 +11,7 @@ import {
   clearCache,
 } from "./db";
 import { buildBlacklistPanelHTML } from "./logger";
+import { resetStats } from "./interceptor";
 
 // ---------- 全局UI状态 ----------
 let panelVisible = false;
@@ -23,7 +24,12 @@ export function loadConfig(): FilterConfig {
   try {
     const raw = GM_getValue("ruozhi-config", "");
     if (raw) {
-      return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      // 兼容旧版 boolean foldMode
+      if (typeof parsed.foldMode === "boolean") {
+        parsed.foldMode = parsed.foldMode ? "classic" : "none";
+      }
+      return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch {
     /* ignore */
@@ -233,10 +239,13 @@ function buildPanelHTML(config: FilterConfig): string {
     </div>
 
     <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input id="ruozhi-fold-mode" type="checkbox" ${config.foldMode ? "checked" : ""}>
-        折叠模式 (关闭后完全隐藏)
-      </label>
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">👁️ 折叠样式</label>
+      <select id="ruozhi-fold-mode"
+        style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;background:#fff">
+        <option value="classic" ${config.foldMode === "classic" ? "selected" : ""}>⚠️ 经典警告 — 黄底醒目提示</option>
+        <option value="light" ${config.foldMode === "light" ? "selected" : ""}>▎极简标记 — 灰线弱提示</option>
+        <option value="none" ${config.foldMode === "none" ? "selected" : ""}>🚫 完全隐藏 — 直接移除评论</option>
+      </select>
     </div>
 
     <div style="margin-bottom:12px">
@@ -373,8 +382,8 @@ function bindPanelEvents(
         (root.querySelector("#ruozhi-enable-ai") as HTMLInputElement)
           ?.checked ?? true,
       foldMode:
-        (root.querySelector("#ruozhi-fold-mode") as HTMLInputElement)
-          ?.checked ?? true,
+        ((root.querySelector("#ruozhi-fold-mode") as HTMLSelectElement)
+          ?.value as FilterConfig["foldMode"]) ?? "classic",
       enableBlacklist:
         (root.querySelector("#ruozhi-enable-bl") as HTMLInputElement)
           ?.checked ?? true,
@@ -440,6 +449,15 @@ function bindPanelEvents(
           '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
       }
     });
+
+  // 重置统计 (动态渲染，用事件委托)
+  root.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest("#ruozhi-clear-stats")) return;
+    if (!confirm("确定要重置所有统计数据吗？")) return;
+    resetStats();
+    updateStatsPanel();
+  });
 }
 
 function showStatus(root: HTMLElement, msg: string, color: string): void {
@@ -483,7 +501,11 @@ function updateStatsPanel(): void {
   contentEl.innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:8px;color:#333">📈 累计统计</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
+          <div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div>
+          <div style="font-size:11px;color:#999">已扫描</div>
+        </div>
         <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
           <div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div>
           <div style="font-size:11px;color:#999">已过滤</div>
@@ -499,6 +521,10 @@ function updateStatsPanel(): void {
         <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
           <div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div>
           <div style="font-size:11px;color:#999">预估费用</div>
+        </div>
+        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats">
+          <div style="font-size:16px;color:#f56c6c">🗑️</div>
+          <div style="font-size:11px;color:#f56c6c">重置统计</div>
         </div>
       </div>
     </div>
@@ -516,9 +542,9 @@ function updateStatsPanel(): void {
 function bindBlacklistEvents(container: Element): void {
   container.querySelectorAll(".ruozhi-remove-bl").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const uid = parseInt((btn as HTMLElement).dataset.uid ?? "0");
-      if (uid) {
-        await removeFromBlacklist(uid);
+      const mid = parseInt((btn as HTMLElement).dataset.mid ?? "0");
+      if (mid) {
+        await removeFromBlacklist(mid);
         const contentEl =
           container.querySelector("#ruozhi-blacklist-content") ?? container;
         contentEl.innerHTML = await buildBlacklistPanelHTML();

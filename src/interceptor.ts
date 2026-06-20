@@ -10,21 +10,42 @@ import type {
   BlacklistRecord,
 } from "./types";
 import { filterReplies } from "./filter";
-import { addToBlacklist, blacklistKey } from "./db";
+import { addToBlacklist } from "./db";
 
 const TAG = "[ruozhi-filter]";
 
-// 全局统计
-const ruozhiStats: AccumulatedStats = {
-  totalFiltered: 0,
-  totalScanned: 0,
-  apiCalls: 0,
-  totalTokens: 0,
-  promptTokens: 0,
-  completionTokens: 0,
-  severityCounts: {},
-  lastUpdate: 0,
-};
+const STATS_KEY = "ruozhi-stats";
+
+function loadStats(): AccumulatedStats {
+  try {
+    const raw = GM_getValue(STATS_KEY, "");
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* */
+  }
+  return {
+    totalFiltered: 0,
+    totalScanned: 0,
+    apiCalls: 0,
+    totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    severityCounts: {},
+    lastUpdate: 0,
+  };
+}
+
+function saveStats(s: AccumulatedStats): void {
+  try {
+    GM_setValue(STATS_KEY, JSON.stringify(s));
+  } catch {
+    /* */
+  }
+}
+
+// 全局统计：从持久化存储恢复，跨SPA导航保持
+const ruozhiStats: AccumulatedStats = loadStats();
+
 // 暴露到全局
 if (typeof window !== "undefined") {
   (window as any).__ruozhi_stats = ruozhiStats;
@@ -40,7 +61,14 @@ let currentContext: ReplyContext = { oid: 0, videoTitle: "", videoDesc: "" };
 let getConfig = (): FilterConfig => {
   try {
     const raw = GM_getValue("ruozhi-config", "");
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // 兼容旧版 boolean foldMode
+      if (typeof parsed.foldMode === "boolean") {
+        parsed.foldMode = parsed.foldMode ? "classic" : "none";
+      }
+      return parsed;
+    }
   } catch {
     /* */
   }
@@ -49,7 +77,7 @@ let getConfig = (): FilterConfig => {
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-chat",
     prompt: "",
-    foldMode: true,
+    foldMode: "classic" as const,
     enableAI: true,
     enableBlacklist: true,
     blacklistStrictness: 1,
@@ -57,7 +85,7 @@ let getConfig = (): FilterConfig => {
     sendUname: false,
     sendMid: false,
     sendVideoDesc: false,
-    filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
+    filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
 - **人身攻击**：针对个人的侮辱、谩骂、诅咒
 - **引战/煽动**：故意挑起争端，使用极端化言论
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
@@ -396,24 +424,33 @@ function findCommentElements(
 
 function scanPage(): void {
   const root = getCommentRoot();
-  if (!root) return;
+  if (!root) {
+    console.log(TAG, "🔍 scanPage: 未找到评论区根节点");
+    return;
+  }
 
   const items = findCommentElements(root);
+  console.log(
+    TAG,
+    `🔍 scanPage: 找到 ${items.length} 个评论元素, root=${root === document ? "document" : (root as Element).tagName || "shadowRoot"}`,
+  );
   if (items.length === 0) return;
 
   let found = 0;
   items.forEach((el) => {
     const info = extractComment(el);
     if (!info) return;
+
+    // 注入手动拉黑按钮（在 rpid 检查前，切换排序时 DOM 重建也能注入）
+    // WeakSet<Element> 仍能防重复注入，不依赖 rpid
+    injectManualBlacklistButton(el, info);
+
     if (scannedRpids.has(info.rpid)) return;
     scannedRpids.add(info.rpid);
     found++;
     const config = getConfig();
     if (!config.enableAI && !config.enableBlacklist) return;
     pendingBatch.push(info);
-
-    // 注入手动拉黑按钮
-    injectManualBlacklistButton(el, info);
   });
 
   if (found > 0) {
@@ -427,95 +464,75 @@ function scanPage(): void {
 /** 已注入拉黑按钮的元素集合（避免重复注入） */
 const blacklistButtonInjected = new WeakSet<Element>();
 
-/** 按钮默认样式（全内联，不依赖任何CSS文件/ShadowDOM穿透） */
-const BL_BTN_STYLE: Partial<CSSStyleDeclaration> = {
-  position: "absolute",
-  top: "6px",
-  right: "8px",
-  zIndex: "10",
-  opacity: "0",
+/** 按钮样式（inline-block兄弟节点，始终可见） */
+const BL_BTN_STYLE: Record<string, string> = {
+  position: "relative",
+  zIndex: "1",
+  float: "right",
+  marginTop: "4px",
+  marginRight: "4px",
   padding: "1px 8px",
   fontSize: "11px",
   color: "#aaa",
-  background: "rgba(255,255,255,0.92)",
-  border: "1px solid #e8e8e8",
+  background: "rgba(255,255,255,0.88)",
+  border: "1px solid #e0e0e0",
   borderRadius: "10px",
   cursor: "pointer",
-  transition: "opacity 0.2s, color 0.15s, border-color 0.15s",
   userSelect: "none",
   fontFamily: "system-ui, -apple-system, sans-serif",
   lineHeight: "18px",
   whiteSpace: "nowrap",
-  backdropFilter: "blur(2px)",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+  transition:
+    "color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s",
 };
 
-const BL_BTN_HOVER: Partial<CSSStyleDeclaration> = {
+const BL_BTN_HOVER: Record<string, string> = {
   color: "#d9534f",
   borderColor: "#d9534f",
   background: "#fff5f5",
-  opacity: "1",
 };
 
-const BL_BTN_DONE: Partial<CSSStyleDeclaration> = {
+const BL_BTN_DONE: Record<string, string> = {
   color: "#d9534f",
   borderColor: "#f5c6cb",
   background: "#fff0f0",
-  opacity: "1",
+  boxShadow: "none",
   cursor: "default",
+  pointerEvents: "none",
 };
 
-function applyStyles(
-  el: HTMLElement,
-  styles: Partial<CSSStyleDeclaration>,
-): void {
-  for (const [k, v] of Object.entries(styles)) {
-    (el.style as any)[k] = v;
-  }
+function applyStyles(el: HTMLElement, styles: Record<string, string>): void {
+  Object.assign(el.style, styles);
 }
 
 /**
- * 注入手动拉黑按钮：作为 el 的子节点，absolute 定位在右上角。
- * 给 el 加 position:relative，不包裹、不修改父容器。
+ * 注入手动拉黑按钮：作为 el 的兄弟节点（span inline-block）。
+ * 不能作为子节点——bili-comment-thread-renderer 的 Shadow DOM 无 slot，
+ * light DOM 子节点不会渲染。
  */
 function injectManualBlacklistButton(el: Element, info: PendingComment): void {
   if (blacklistButtonInjected.has(el)) return;
   blacklistButtonInjected.add(el);
 
-  if (!(el instanceof HTMLElement)) return;
+  const parent = el.parentNode;
+  if (!parent) return;
 
-  // 给评论元素自身加 relative（只建定位上下文，不影响布局）
-  const computed = getComputedStyle(el);
-  if (computed.position === "static") {
-    el.style.position = "relative";
-  }
-
-  // ── 拉黑按钮（全内联样式，absolute 相对于 el 定位） ──
-  const btn = document.createElement("button");
+  // ── 拉黑按钮（span 小药丸，始终可见） ──
+  const btn = document.createElement("span");
   btn.textContent = "🚫 拉黑";
   btn.title = `将 ${info.uname} 加入黑名单`;
   applyStyles(btn, BL_BTN_STYLE);
 
-  el.appendChild(btn);
+  // 插入为 el 的前一个兄弟节点（float:right 会显示在头像另一侧）
+  parent.insertBefore(btn, el);
 
-  // ── hover 效果（按钮是 el 的子节点，事件自然覆盖） ──
-  let isDone = false;
-
-  el.addEventListener("mouseenter", () => {
-    if (isDone) return;
-    btn.style.opacity = "1";
+  // 用 dataset.done 追踪状态
+  btn.addEventListener("mouseenter", () => {
+    if (btn.dataset.done !== "1") applyStyles(btn, BL_BTN_HOVER);
   });
-  el.addEventListener("mouseleave", () => {
-    if (isDone) return;
-    btn.style.opacity = "0";
-  });
-
-  btn.addEventListener("mouseenter", (e) => {
-    e.stopPropagation();
-    if (!isDone) applyStyles(btn, BL_BTN_HOVER);
-  });
-  btn.addEventListener("mouseleave", (e) => {
-    e.stopPropagation();
-    if (!isDone) applyStyles(btn, BL_BTN_STYLE);
+  btn.addEventListener("mouseleave", () => {
+    if (btn.dataset.done !== "1") applyStyles(btn, BL_BTN_STYLE);
   });
 
   // ── 点击拉黑 ──
@@ -554,7 +571,7 @@ function injectManualBlacklistButton(el: Element, info: PendingComment): void {
         hideEl(el);
       }
 
-      isDone = true;
+      btn.dataset.done = "1";
       btn.textContent = "✅ 已拉黑";
       applyStyles(btn, BL_BTN_DONE);
     } catch (err) {
@@ -568,7 +585,7 @@ function extractComment(el: Element): PendingComment | null {
   try {
     const tag = el.tagName.toLowerCase();
 
-    // 递归获取所有嵌套 shadowRoot 的 innerText（跳过style标签）
+    // 递归获取所有嵌套 shadowRoot 的 innerText（跳过style标签和子回复容器）
     function deepInnerText(root: ParentNode): string {
       let text = "";
       for (const child of root.children) {
@@ -576,6 +593,21 @@ function extractComment(el: Element): PendingComment | null {
         const tag = el.tagName.toLowerCase();
         // 跳过 style 标签
         if (tag === "style") continue;
+        // 跳过子回复嵌套 (b站嵌套回复通常有这些特征)
+        // - "-reply" 匹配 bili-comment-reply-renderer
+        // - "-replies" 匹配 bili-comment-replies-renderer（"replies" ≠ "reply" 子串）
+        const cls = String(
+          (el as HTMLElement).className || el.getAttribute("class") || "",
+        ).toLowerCase();
+        if (
+          cls.includes("sub-reply") ||
+          cls.includes("reply-item") ||
+          cls.includes("fan") ||
+          cls.includes("medal") ||
+          tag.includes("-reply") ||
+          tag.includes("-replies")
+        )
+          continue;
         // 如果子元素有 shadowRoot，递归进入
         if (el.shadowRoot) {
           text += deepInnerText(el.shadowRoot) + "\n";
@@ -627,8 +659,15 @@ function extractComment(el: Element): PendingComment | null {
     // 2. 提取 mid
     let mid = 0;
     function findMid(root: ParentNode): string | null {
-      const el = root.querySelector("[data-mid], [data-uid]");
-      if (el) return el.getAttribute("data-mid") ?? el.getAttribute("data-uid");
+      const el = root.querySelector(
+        "[data-mid], [data-uid], [data-user-profile-id]",
+      );
+      if (el)
+        return (
+          el.getAttribute("data-mid") ??
+          el.getAttribute("data-uid") ??
+          el.getAttribute("data-user-profile-id")
+        );
       for (const child of root.children) {
         const c = child as Element;
         if (c.shadowRoot) {
@@ -641,6 +680,7 @@ function extractComment(el: Element): PendingComment | null {
     const midStr =
       el.getAttribute("data-mid") ??
       el.getAttribute("data-uid") ??
+      el.getAttribute("data-user-profile-id") ??
       (el.shadowRoot ? findMid(el.shadowRoot) : null);
     if (midStr) mid = parseInt(midStr) || 0;
 
@@ -675,6 +715,9 @@ function extractComment(el: Element): PendingComment | null {
       (l) => l !== uname || contentLines.filter((x) => x === l).length > 1,
     );
     let message = msgParts.join(" ");
+
+    // 去掉尾部 "共X条回复" (不是独立行，拼在评论后面的)
+    message = message.replace(/\s*共\s*\d+\s*条回复[，,.]?\s*$/g, "").trim();
 
     if (uname !== "未知用户" && message.startsWith(uname)) {
       message = message.slice(uname.length).trim();
@@ -722,8 +765,10 @@ function isUIText(s: string): boolean {
   if (/^\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}$/.test(s)) return true;
   // "刚刚" "X分钟前" "X小时前" "昨天" "X天前"
   if (/^(刚刚|\d+分钟前|\d+小时前|昨天|\d+天前)$/.test(s)) return true;
-  // 纯标签/徽章 (如 "CD" "001313" 这种短数字字母组合，通常是UP主的标签)
-  // 太短的忽略
+  // "共X条回复" "展开X条回复" 等
+  if (/^(共\s*\d+\s*条回复|展开\s*\d+\s*条回复|查看全部\s*\d+\s*条)$/.test(s))
+    return true;
+  // 纯标签/徽章
   return false;
 }
 
@@ -779,13 +824,21 @@ async function flushBatch(): Promise<void> {
       currentContext,
       ruozhiStats,
     );
+
+    ruozhiStats.totalScanned += batch.length;
+
     if (result.violations.size > 0) {
       console.log(TAG, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
       let cleaned = 0;
       for (const [rpid, v] of result.violations) {
         const p = batch.find((x) => x.rpid === rpid);
         if (!p) continue;
-        if (config.foldMode ? foldEl(p.el, p, v) : hideEl(p.el)) cleaned++;
+        if (
+          config.foldMode === "none"
+            ? hideEl(p.el)
+            : foldEl(p.el, p, v, config.foldMode)
+        )
+          cleaned++;
       }
 
       // 更新UI
@@ -801,6 +854,9 @@ async function flushBatch(): Promise<void> {
         /* */
       }
     }
+
+    // 持久化统计
+    saveStats(ruozhiStats);
   } catch (err) {
     console.error(TAG, "❌ AI失败:", err);
   } finally {
@@ -812,6 +868,7 @@ function foldEl(
   el: Element,
   info: PendingComment,
   verdict: { reason: string; severity: string },
+  style: "classic" | "light" = "classic",
 ): boolean {
   try {
     const labelMap: Record<string, string> = {
@@ -821,11 +878,28 @@ function foldEl(
       block: "🛑 永久拉黑",
     };
     const label = labelMap[verdict.severity] ?? "🚫 已过滤";
-    const html = `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
+
+    const severityAccent: Record<string, string> = {
+      low: "#c8c8c8",
+      medium: "#d4a574",
+      high: "#d47574",
+      block: "#b87070",
+    };
+    const accent = severityAccent[verdict.severity] ?? "#ccc";
+
+    const html =
+      style === "classic"
+        ? `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
 <span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span><span style="float:right;font-size:11px;color:#999">▼ 展开</span>
 </div><div class="ruozhi-original" style="display:none;padding:8px 12px;background:#f8f9fa;border-left:3px solid #ffc107;margin:4px 0;border-radius:0 6px 6px 0;font-size:13px">
 <div style="margin-bottom:6px;font-size:12px;color:#999">🧠 AI判定: <strong>${esc(verdict.reason)}</strong></div>
-<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>`;
+<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>`
+        : `<div class="ruozhi-folded" style="background:#fafafa;border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:#aaa;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
+<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span><span style="float:right;font-size:10px;color:#ccc">▾</span>
+</div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:#fafafa;border-left:3px solid #ddd;margin:0 0 4px 0;font-size:12px;color:#999">
+<div style="margin-bottom:4px;font-size:11px;color:#bbb">AI判定: ${esc(verdict.reason)}</div>
+<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>`;
+
     const wrapper = document.createElement("div");
     wrapper.innerHTML = html;
     const foldElDiv = wrapper.firstElementChild as HTMLElement;
@@ -836,8 +910,8 @@ function foldEl(
     foldElDiv.addEventListener("click", () => {
       const hidden = origElDiv.style.display === "none";
       origElDiv.style.display = hidden ? "block" : "none";
-      const spanEl = foldElDiv.querySelector("span:last-child");
-      if (spanEl) spanEl.textContent = hidden ? "▲ 收起" : "▼ 展开";
+      const arrow = foldElDiv.querySelector("span:last-child");
+      if (arrow) arrow.textContent = hidden ? "▴" : "▾";
     });
     return true;
   } catch {
@@ -935,4 +1009,18 @@ export function startDOMScanner(): void {
   uw.__ruozhi_scan = () => scanPage();
   uw.__ruozhi_flush = () => flushBatch();
   uw.__ruozhi_inspect = () => inspectShadowRoot();
+  uw.__ruozhi_reset_stats = () => resetStats();
+}
+
+/** 重置统计 */
+export function resetStats(): void {
+  ruozhiStats.totalFiltered = 0;
+  ruozhiStats.totalScanned = 0;
+  ruozhiStats.apiCalls = 0;
+  ruozhiStats.totalTokens = 0;
+  ruozhiStats.promptTokens = 0;
+  ruozhiStats.completionTokens = 0;
+  ruozhiStats.severityCounts = {};
+  ruozhiStats.lastUpdate = 0;
+  saveStats(ruozhiStats);
 }

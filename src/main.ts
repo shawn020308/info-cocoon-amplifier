@@ -16,6 +16,7 @@ import { pruneCache, getBlacklistCount } from "./db";
 const TAG = "[ruozhi-filter]";
 
 async function main(): Promise<void> {
+  console.log(TAG, "🚀 插件启动中...");
   let config: FilterConfig = loadConfig();
   if (!config.apiKey) {
     config = { ...DEFAULT_CONFIG };

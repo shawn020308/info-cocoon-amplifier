@@ -20,7 +20,7 @@
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-chat",
     prompt: "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
-    foldMode: true,
+    foldMode: "classic",
     enableAI: true,
     enableBlacklist: true,
     blacklistStrictness: 1,
@@ -34,7 +34,7 @@
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
 - **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
   };
-  const TAG$2 = "[ruozhi-filter]";
+  const TAG$3 = "[ruozhi-filter]";
   function buildSystemPrompt(config, ctx) {
     let ctxBlock = `视频标题：${ctx.videoTitle}`;
     if (config.sendVideoDesc) {
@@ -81,7 +81,7 @@ ${ctxBlock}
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(config, replies);
     console.log(
-      TAG$2,
+      TAG$3,
       "📤 请求体:",
       JSON.stringify({
         model: config.model,
@@ -113,19 +113,19 @@ ${ctxBlock}
         })
       });
       console.log(
-        TAG$2,
+        TAG$3,
         `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`
       );
       if (!response.ok) {
         const errText = await response.text();
-        console.error(TAG$2, `❌ API ${response.status}:`, errText.slice(0, 200));
+        console.error(TAG$3, `❌ API ${response.status}:`, errText.slice(0, 200));
         throw new Error(`DeepSeek API error ${response.status}`);
       }
       const data = await response.json();
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
       if (!content) {
-        console.warn(TAG$2, "⚠️ AI 返回空内容");
+        console.warn(TAG$3, "⚠️ AI 返回空内容");
         return { verdicts: [], usage };
       }
       try {
@@ -137,11 +137,11 @@ ${ctxBlock}
         const parsed = JSON.parse(jsonStr);
         return { verdicts: parsed.verdicts ?? [], usage };
       } catch (e) {
-        console.error(TAG$2, "❌ AI 返回解析失败:", e);
+        console.error(TAG$3, "❌ AI 返回解析失败:", e);
         return { verdicts: [], usage };
       }
     } catch (err) {
-      console.error(TAG$2, "❌ 网络请求失败:", err);
+      console.error(TAG$3, "❌ 网络请求失败:", err);
       throw err;
     }
   }
@@ -399,7 +399,7 @@ ${ctxBlock}
     }
   }));
   const DB_NAME = "ruozhi-filter-db";
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   let dbPromise = null;
   function getDB() {
     if (!dbPromise) {
@@ -421,6 +421,15 @@ ${ctxBlock}
             });
             bl.createIndex("timestamp", "timestamp");
             bl.createIndex("severity", "severity");
+          }
+          if (oldVersion < 4) {
+            if (db.objectStoreNames.contains("blacklist")) {
+              db.deleteObjectStore("blacklist");
+            }
+            const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
+            bl.createIndex("timestamp", "timestamp");
+            bl.createIndex("severity", "severity");
+            bl.createIndex("uid", "uid");
           }
           if (!db.objectStoreNames.contains("cache")) {
             const c = db.createObjectStore("cache", { keyPath: "hash" });
@@ -447,22 +456,25 @@ ${ctxBlock}
   }
   async function isBlacklisted(mid, uname) {
     const db = await getDB();
-    const key = mid > 0 ? mid : blacklistKey(uname);
-    const record = await db.get("blacklist", key);
-    return record ?? null;
+    if (mid > 0) {
+      const record = await db.get("blacklist", mid);
+      if (record) return record;
+    }
+    return await db.getFromIndex("blacklist", "uid", blacklistKey(uname)) ?? null;
   }
   async function addToBlacklist(record) {
     const db = await getDB();
     const uid = blacklistKey(record.uname);
-    await db.put("blacklist", { ...record, uid });
+    const key = record.mid > 0 ? record.mid : uid;
+    await db.put("blacklist", { ...record, mid: key, uid });
   }
   async function getAllBlacklist() {
     const db = await getDB();
     return db.getAll("blacklist");
   }
-  async function removeFromBlacklist(uid) {
+  async function removeFromBlacklist(mid) {
     const db = await getDB();
-    await db.delete("blacklist", uid);
+    await db.delete("blacklist", mid);
   }
   async function clearBlacklist() {
     const db = await getDB();
@@ -511,7 +523,7 @@ ${ctxBlock}
     }
     const rows = records.sort((a, b) => b.timestamp - a.timestamp).map((r) => {
       const date = new Date(r.timestamp).toLocaleString("zh-CN");
-      const uid = r.uid ?? 0;
+      const mid = r.mid;
       const sourceBadge = r.source === "manual" ? '<span style="background:#d9534f;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">手动</span>' : '<span style="background:#667eea;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px">AI</span>';
       return `
       <div style="padding:10px 12px;border-bottom:1px solid #eee;font-size:13px">
@@ -522,7 +534,7 @@ ${ctxBlock}
         <div style="color:#666;margin:4px 0">💬 ${escapeHtml$1(r.message.slice(0, 100))}${r.message.length > 100 ? "..." : ""}</div>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="color:#d9534f">📋 ${escapeHtml$1(r.reason)}</span>
-          <button class="ruozhi-remove-bl" data-uid="${uid}"
+          <button class="ruozhi-remove-bl" data-mid="${mid}"
             style="padding:2px 8px;font-size:12px;background:#fff;border:1px solid #ddd;border-radius:4px;cursor:pointer">
             移除
           </button>
@@ -532,6 +544,824 @@ ${ctxBlock}
     }).join("");
     return rows;
   }
+  const TAG$2 = "[ruozhi-filter]";
+  async function filterReplies(config, replies, ctx, stats) {
+    const violations = /* @__PURE__ */ new Map();
+    let newBlacklistEntries = 0;
+    if (replies.length === 0) return { violations, newBlacklistEntries };
+    const needAICheck = [];
+    for (const reply of replies) {
+      if (config.enableBlacklist) {
+        const blRecord = await isBlacklisted(reply.mid, reply.member.uname);
+        if (blRecord) {
+          violations.set(reply.rpid, {
+            reason: `[黑名单] ${blRecord.reason}`,
+            severity: blRecord.severity
+          });
+          if (stats) {
+            stats.totalFiltered++;
+            stats.severityCounts[blRecord.severity] = (stats.severityCounts[blRecord.severity] ?? 0) + 1;
+          }
+          continue;
+        }
+      }
+      const hash = commentHash(reply.content.message, reply.mid);
+      const cached = await getCache(hash);
+      if (cached && cached.violation) {
+        violations.set(reply.rpid, {
+          reason: `[缓存] ${cached.reason}`,
+          severity: cached.severity
+        });
+        if (stats) {
+          stats.totalFiltered++;
+          stats.severityCounts[cached.severity] = (stats.severityCounts[cached.severity] ?? 0) + 1;
+        }
+        continue;
+      }
+      if (config.enableAI) {
+        needAICheck.push(reply);
+      }
+    }
+    if (needAICheck.length > 0 && config.enableAI && config.apiKey) {
+      try {
+        const result = await batchJudge(config, needAICheck, ctx);
+        if (stats && result.usage) {
+          stats.totalTokens += result.usage.total_tokens ?? 0;
+          stats.promptTokens += result.usage.prompt_tokens ?? 0;
+          stats.completionTokens += result.usage.completion_tokens ?? 0;
+          stats.apiCalls++;
+        }
+        for (const v of result.verdicts) {
+          const reply = needAICheck.find((r) => r.rpid === v.rpid);
+          if (reply) {
+            const hash = commentHash(reply.content.message, reply.mid);
+            await setCache({
+              hash,
+              violation: v.violation,
+              reason: v.reason,
+              severity: v.severity,
+              timestamp: Date.now()
+            });
+          }
+          if (v.violation) {
+            violations.set(v.rpid, {
+              reason: v.reason,
+              severity: v.severity
+            });
+            if (stats) {
+              stats.totalFiltered++;
+              stats.severityCounts[v.severity] = (stats.severityCounts[v.severity] ?? 0) + 1;
+            }
+            if ((v.severity === "block" || v.severity === "high") && reply) {
+              console.log(TAG$2, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
+              await addToBlacklist({
+                mid: v.mid,
+                uname: reply.member.uname,
+                rpid: v.rpid,
+                message: reply.content.message,
+                reason: v.reason,
+                videoTitle: ctx.videoTitle,
+                videoUrl: window.location.href,
+                timestamp: Date.now(),
+                severity: v.severity,
+                source: "auto"
+              });
+              newBlacklistEntries++;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(TAG$2, "❌ AI判定失败:", err);
+      }
+    } else if (needAICheck.length > 0 && !config.apiKey) {
+      console.warn(TAG$2, "⚠️ 未配置 API Key，跳过 AI 判定");
+    }
+    if (stats) stats.lastUpdate = Date.now();
+    return { violations, newBlacklistEntries };
+  }
+  const TAG$1 = "[ruozhi-filter]";
+  const STATS_KEY = "ruozhi-stats";
+  function loadStats() {
+    try {
+      const raw = GM_getValue(STATS_KEY, "");
+      if (raw) return JSON.parse(raw);
+    } catch {
+    }
+    return {
+      totalFiltered: 0,
+      totalScanned: 0,
+      apiCalls: 0,
+      totalTokens: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      severityCounts: {},
+      lastUpdate: 0
+    };
+  }
+  function saveStats(s) {
+    try {
+      GM_setValue(STATS_KEY, JSON.stringify(s));
+    } catch {
+    }
+  }
+  const ruozhiStats = loadStats();
+  if (typeof window !== "undefined") {
+    window.__ruozhi_stats = ruozhiStats;
+  }
+  let updateStats = () => {
+  };
+  function setUpdateStats(fn) {
+    updateStats = fn;
+  }
+  let currentContext = { oid: 0, videoTitle: "", videoDesc: "" };
+  let getConfig = () => {
+    try {
+      const raw = GM_getValue("ruozhi-config", "");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.foldMode === "boolean") {
+          parsed.foldMode = parsed.foldMode ? "classic" : "none";
+        }
+        return parsed;
+      }
+    } catch {
+    }
+    return {
+      apiKey: "",
+      apiEndpoint: "https://api.deepseek.com/chat/completions",
+      model: "deepseek-chat",
+      prompt: "",
+      foldMode: "classic",
+      enableAI: true,
+      enableBlacklist: true,
+      blacklistStrictness: 1,
+      pricePerMToken: 1.1,
+      sendUname: false,
+      sendMid: false,
+      sendVideoDesc: false,
+      filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
+- **人身攻击**：针对个人的侮辱、谩骂、诅咒
+- **引战/煽动**：故意挑起争端，使用极端化言论
+- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
+- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
+    };
+  };
+  function refreshConfig(cfg) {
+    getConfig = () => cfg;
+  }
+  function updateContext(ctx) {
+    if (ctx.oid) currentContext.oid = ctx.oid;
+    if (ctx.videoTitle) currentContext.videoTitle = ctx.videoTitle;
+    if (ctx.videoDesc) currentContext.videoDesc = ctx.videoDesc;
+  }
+  function extractVideoInfo() {
+    var _a, _b, _c, _d;
+    const titleEl = document.querySelector("h1.video-title") ?? document.querySelector(".video-info-title .tit") ?? document.querySelector("[data-title]");
+    if (titleEl) {
+      currentContext.videoTitle = ((_a = titleEl.dataset) == null ? void 0 : _a.title) ?? titleEl.getAttribute("data-title") ?? titleEl.getAttribute("title") ?? ((_b = titleEl.textContent) == null ? void 0 : _b.trim()) ?? "";
+    }
+    const descEl = document.querySelector("#v_desc .desc-info-text") ?? document.querySelector(".desc-info-text") ?? document.querySelector(".basic-desc-info");
+    if (descEl) {
+      const t = ((_c = descEl.textContent) == null ? void 0 : _c.trim()) ?? "";
+      currentContext.videoDesc = t === "-" ? "" : t;
+    }
+    const bc = document.querySelector("bili-comments");
+    if (bc) {
+      const p = bc.getAttribute("data-params");
+      if (p) {
+        const pts = p.split(",");
+        if (pts.length >= 2) currentContext.oid = parseInt(pts[1]) || 0;
+      }
+    }
+    if (!currentContext.oid) {
+      try {
+        for (const s of document.querySelectorAll("script")) {
+          const m = (s.textContent ?? "").match(
+            /window\.__INITIAL_STATE__\s*=\s*(\{.+?\});/
+          );
+          if (m) {
+            const data = JSON.parse(m[1]);
+            const aid = ((_d = data == null ? void 0 : data.videoData) == null ? void 0 : _d.aid) ?? (data == null ? void 0 : data.aid);
+            if (aid) {
+              currentContext.oid = aid;
+              break;
+            }
+          }
+        }
+      } catch {
+      }
+    }
+    if (!currentContext.oid) {
+      location.pathname.match(/\/video\/(BV\w+)/);
+    }
+  }
+  function fullPageDiagnostic() {
+    var _a, _b;
+    console.log(TAG$1, "══════ 诊断 ══════");
+    const bc = document.querySelector("bili-comments");
+    console.log(
+      TAG$1,
+      `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`
+    );
+    const containerSelectors = [
+      "#comment",
+      "#commentapp",
+      ".comment-container",
+      ".reply-list",
+      ".bb-comment",
+      "[class*='comment']",
+      "[class*='reply']",
+      "[id*='comment']",
+      "[id*='reply']"
+    ];
+    for (const sel of containerSelectors) {
+      const els = document.querySelectorAll(sel);
+      if (els.length > 0 && els.length < 200) {
+        const first = els[0];
+        const id = first.id ? `#${first.id}` : "(无id)";
+        const cls = first.className ? "." + first.className.split(" ").slice(0, 3).join(".") : "(无class)";
+        console.log(
+          TAG$1,
+          `  📌 "${sel}" → ${els.length}个 ${first.tagName.toLowerCase()}${id}${cls}`
+        );
+      }
+    }
+    if (bc && bc.shadowRoot) {
+      const sr = bc.shadowRoot;
+      const allNodes = sr.querySelectorAll("*");
+      console.log(TAG$1, `🔬 ShadowRoot 总节点: ${allNodes.length}`);
+      const tagCounts = /* @__PURE__ */ new Map();
+      allNodes.forEach((n) => {
+        const t = n.tagName.toLowerCase();
+        tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+      });
+      console.log(
+        TAG$1,
+        `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`
+      );
+      const itemChecks = [
+        "[data-rpid]",
+        ".reply-item",
+        ".comment-item",
+        ".reply-wrap",
+        ".con",
+        "bb-comment"
+      ];
+      for (const sel of itemChecks) {
+        const count = sr.querySelectorAll(sel).length;
+        console.log(TAG$1, `  🎯 "${sel}" → ${count}个`);
+      }
+      console.log(TAG$1, "📋 ShadowRoot 直接子元素:");
+      for (const child of sr.children) {
+        const tag = child.tagName.toLowerCase();
+        const id = child.id ? `#${child.id}` : "";
+        const cls = child.className ? "." + child.className.split(" ").slice(0, 3).join(".") : "";
+        const text = ((_a = child.innerText) == null ? void 0 : _a.slice(0, 60)) ?? "";
+        const childCount = child.querySelectorAll("*").length;
+        console.log(
+          TAG$1,
+          `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`
+        );
+        if (childCount > 0 && childCount <= 30) {
+          for (const c2 of child.children) {
+            const t2 = c2.tagName.toLowerCase();
+            const id2 = c2.id ? `#${c2.id}` : "";
+            const cls2 = c2.className ? "." + c2.className.split(" ").slice(0, 2).join(".") : "";
+            const txt2 = ((_b = c2.innerText) == null ? void 0 : _b.slice(0, 50)) ?? "";
+            const dataAttrs = c2 instanceof HTMLElement ? c2.getAttributeNames().filter((a) => a.startsWith("data-")).join(", ") : "";
+            console.log(
+              TAG$1,
+              `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`
+            );
+          }
+        }
+      }
+    }
+    const mainSections = [
+      "#reply",
+      "#danmakuBox",
+      ".player-auxiliary",
+      ".video-info-container",
+      ".video-data",
+      "section"
+    ];
+    console.log(TAG$1, "📐 页面结构:");
+    for (const sel of mainSections) {
+      const els = document.querySelectorAll(sel);
+      if (els.length > 0) console.log(TAG$1, `  ${sel}: ${els.length}个`);
+    }
+    console.log(TAG$1, "══════ 完成 ══════");
+  }
+  function inspectShadowRoot() {
+    const bc = document.querySelector("bili-comments");
+    if (!bc || !bc.shadowRoot) {
+      console.log(TAG$1, "❌ bili-comments 或其 shadowRoot 未找到");
+      return;
+    }
+    const sr = bc.shadowRoot;
+    console.log(TAG$1, "══════ ShadowRoot 完整探查 ══════");
+    console.log(TAG$1, `总节点数: ${sr.querySelectorAll("*").length}`);
+    console.log(TAG$1, `直接子元素数: ${sr.children.length}`);
+    function dump(el, depth = 0) {
+      var _a, _b;
+      if (depth > 4) return;
+      const indent = "  ".repeat(depth);
+      const tag = el.tagName.toLowerCase();
+      const id = el.id ? `#${el.id}` : "";
+      const cls = el.className ? "." + el.className.split(" ").slice(0, 3).join(".") : "";
+      const attrs = el instanceof HTMLElement ? el.getAttributeNames().filter((a) => a !== "class" && a !== "id").map((a) => `${a}="${el.getAttribute(a)}"`.slice(0, 60)).join(" ") : "";
+      const text = ((_b = (_a = el.innerText) == null ? void 0 : _a.slice(0, 80)) == null ? void 0 : _b.replace(/\n/g, " ")) ?? "";
+      console.log(TAG$1, `${indent}<${tag}${id}${cls}> ${attrs} "${text}"`);
+      if (el.children.length <= 4) {
+        for (const c of el.children) dump(c, depth + 1);
+      } else if (depth < 3) {
+        console.log(TAG$1, `${indent}  ... ${el.children.length}个子元素，取前4个`);
+        for (let i = 0; i < Math.min(4, el.children.length); i++) {
+          dump(el.children[i], depth + 1);
+        }
+      }
+    }
+    for (const child of sr.children) {
+      dump(child, 0);
+    }
+    console.log(TAG$1, "══════ 探查完成 ══════");
+  }
+  let pendingBatch = [];
+  let batchTimer = null;
+  const scannedRpids = /* @__PURE__ */ new Set();
+  function getCommentRoot() {
+    const bc = document.querySelector("bili-comments");
+    if (bc && bc.shadowRoot) return bc.shadowRoot;
+    if (bc) return bc;
+    const containerSelectors = [
+      "#comment",
+      "#commentapp",
+      ".comment-container",
+      ".reply-list",
+      ".bb-comment"
+    ];
+    for (const sel of containerSelectors) {
+      const el = document.querySelector(sel);
+      if (el && el.querySelectorAll("*").length > 5) return el;
+    }
+    return null;
+  }
+  function findCommentElements(root) {
+    var _a;
+    let items = root.querySelectorAll("bili-comment-thread-renderer");
+    if (items.length > 0) return items;
+    items = root.querySelectorAll("[data-rpid]");
+    if (items.length > 0) return items;
+    items = root.querySelectorAll(
+      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment"
+    );
+    if (items.length > 0) return items;
+    const divs = root.querySelectorAll("div");
+    if (divs.length > 500) return [];
+    const candidates = [];
+    for (const d of divs) {
+      if (candidates.length >= 100) break;
+      const childCount = d.querySelectorAll("*").length;
+      if (childCount < 3 || childCount > 80) continue;
+      const t = ((_a = d.innerText) == null ? void 0 : _a.trim()) ?? "";
+      if (t.length < 30 || t.length > 5e3) continue;
+      if (!t.includes("回复") || !t.includes("举报")) continue;
+      candidates.push(d);
+    }
+    return candidates;
+  }
+  function scanPage() {
+    const root = getCommentRoot();
+    if (!root) {
+      console.log(TAG$1, "🔍 scanPage: 未找到评论区根节点");
+      return;
+    }
+    const items = findCommentElements(root);
+    console.log(
+      TAG$1,
+      `🔍 scanPage: 找到 ${items.length} 个评论元素, root=${root === document ? "document" : root.tagName || "shadowRoot"}`
+    );
+    if (items.length === 0) return;
+    let found = 0;
+    items.forEach((el) => {
+      const info = extractComment(el);
+      if (!info) return;
+      injectManualBlacklistButton(el, info);
+      if (scannedRpids.has(info.rpid)) return;
+      scannedRpids.add(info.rpid);
+      found++;
+      const config = getConfig();
+      if (!config.enableAI && !config.enableBlacklist) return;
+      pendingBatch.push(info);
+    });
+    if (found > 0) {
+      if (pendingBatch.length >= 20) flushBatch();
+      else if (!batchTimer) batchTimer = setTimeout(flushBatch, 800);
+    }
+  }
+  const blacklistButtonInjected = /* @__PURE__ */ new WeakSet();
+  const BL_BTN_STYLE = {
+    position: "relative",
+    zIndex: "1",
+    float: "right",
+    marginTop: "4px",
+    marginRight: "4px",
+    padding: "1px 8px",
+    fontSize: "11px",
+    color: "#aaa",
+    background: "rgba(255,255,255,0.88)",
+    border: "1px solid #e0e0e0",
+    borderRadius: "10px",
+    cursor: "pointer",
+    userSelect: "none",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    lineHeight: "18px",
+    whiteSpace: "nowrap",
+    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+    transition: "color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s"
+  };
+  const BL_BTN_HOVER = {
+    color: "#d9534f",
+    borderColor: "#d9534f",
+    background: "#fff5f5"
+  };
+  const BL_BTN_DONE = {
+    color: "#d9534f",
+    borderColor: "#f5c6cb",
+    background: "#fff0f0",
+    boxShadow: "none",
+    cursor: "default",
+    pointerEvents: "none"
+  };
+  function applyStyles(el, styles) {
+    Object.assign(el.style, styles);
+  }
+  function injectManualBlacklistButton(el, info) {
+    if (blacklistButtonInjected.has(el)) return;
+    blacklistButtonInjected.add(el);
+    const parent = el.parentNode;
+    if (!parent) return;
+    const btn = document.createElement("span");
+    btn.textContent = "🚫 拉黑";
+    btn.title = `将 ${info.uname} 加入黑名单`;
+    applyStyles(btn, BL_BTN_STYLE);
+    parent.insertBefore(btn, el);
+    btn.addEventListener("mouseenter", () => {
+      if (btn.dataset.done !== "1") applyStyles(btn, BL_BTN_HOVER);
+    });
+    btn.addEventListener("mouseleave", () => {
+      if (btn.dataset.done !== "1") applyStyles(btn, BL_BTN_STYLE);
+    });
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (!confirm(
+        `确定要将用户 "${info.uname}" 加入黑名单吗？
+该用户的所有评论将被隐藏。`
+      )) {
+        return;
+      }
+      try {
+        const config = getConfig();
+        await addToBlacklist({
+          mid: info.mid,
+          uname: info.uname,
+          rpid: info.rpid,
+          message: info.message,
+          reason: "[手动拉黑]",
+          videoTitle: currentContext.videoTitle,
+          videoUrl: window.location.href,
+          timestamp: Date.now(),
+          severity: "block",
+          source: "manual"
+        });
+        console.log(TAG$1, `🚫 手动拉黑: ${info.uname}`);
+        if (config.foldMode) {
+          foldEl(el, info, { reason: "[手动拉黑]", severity: "block" });
+        } else {
+          hideEl(el);
+        }
+        btn.dataset.done = "1";
+        btn.textContent = "✅ 已拉黑";
+        applyStyles(btn, BL_BTN_DONE);
+      } catch (err) {
+        console.error(TAG$1, "❌ 手动拉黑失败:", err);
+      }
+    });
+  }
+  function extractComment(el) {
+    var _a;
+    try {
+      let deepInnerText = function(root) {
+        var _a2;
+        let text = "";
+        for (const child of root.children) {
+          const el2 = child;
+          const tag2 = el2.tagName.toLowerCase();
+          if (tag2 === "style") continue;
+          const cls = String(
+            el2.className || el2.getAttribute("class") || ""
+          ).toLowerCase();
+          if (cls.includes("sub-reply") || cls.includes("reply-item") || cls.includes("fan") || cls.includes("medal") || tag2.includes("-reply") || tag2.includes("-replies"))
+            continue;
+          if (el2.shadowRoot) {
+            text += deepInnerText(el2.shadowRoot) + "\n";
+          } else if (el2.children.length > 0) {
+            text += deepInnerText(el2) + "\n";
+          } else {
+            const t = (_a2 = el2.innerText) == null ? void 0 : _a2.trim();
+            if (t) text += t + "\n";
+          }
+        }
+        return text;
+      }, findRpid = function(root) {
+        const el2 = root.querySelector("[data-rpid]");
+        if (el2) return el2.getAttribute("data-rpid");
+        for (const child of root.children) {
+          const c = child;
+          if (c.shadowRoot) {
+            const r = findRpid(c.shadowRoot);
+            if (r) return r;
+          }
+        }
+        return null;
+      }, findMid = function(root) {
+        const el2 = root.querySelector(
+          "[data-mid], [data-uid], [data-user-profile-id]"
+        );
+        if (el2)
+          return el2.getAttribute("data-mid") ?? el2.getAttribute("data-uid") ?? el2.getAttribute("data-user-profile-id");
+        for (const child of root.children) {
+          const c = child;
+          if (c.shadowRoot) {
+            const r = findMid(c.shadowRoot);
+            if (r) return r;
+          }
+        }
+        return null;
+      };
+      const tag = el.tagName.toLowerCase();
+      let fullText = "";
+      if (el.shadowRoot) {
+        fullText = deepInnerText(el.shadowRoot).trim();
+      }
+      if (!fullText) {
+        fullText = ((_a = el.innerText) == null ? void 0 : _a.trim()) ?? "";
+      }
+      if (fullText.length < 3) return null;
+      let rpid = 0;
+      const rpidStr = el.getAttribute("data-rpid") ?? (el.shadowRoot ? findRpid(el.shadowRoot) : null);
+      if (rpidStr) rpid = parseInt(rpidStr);
+      if (!rpid) {
+        const hashInput = `${tag}:${fullText.slice(0, 300)}`;
+        rpid = strHash(hashInput);
+      }
+      let mid = 0;
+      const midStr = el.getAttribute("data-mid") ?? el.getAttribute("data-uid") ?? el.getAttribute("data-user-profile-id") ?? (el.shadowRoot ? findMid(el.shadowRoot) : null);
+      if (midStr) mid = parseInt(midStr) || 0;
+      const lines = fullText.split("\n").map((l) => l.trim()).filter(Boolean);
+      const contentLines = lines.filter((l) => {
+        if (IGNORE_TEXTS.has(l)) return false;
+        if (isUIText(l)) return false;
+        return true;
+      });
+      if (contentLines.length === 0) return null;
+      const uname = contentLines.find(
+        (l) => l.length >= 2 && l.length <= 20 && !/^\d/.test(l) && !l.includes("·") && !l.includes("分钟") && !l.includes("小时") && !l.includes("刚刚") && !l.includes("昨天")
+      ) ?? "未知用户";
+      const msgParts = contentLines.filter(
+        (l) => l !== uname || contentLines.filter((x) => x === l).length > 1
+      );
+      let message = msgParts.join(" ");
+      message = message.replace(/\s*共\s*\d+\s*条回复[，,.]?\s*$/g, "").trim();
+      if (uname !== "未知用户" && message.startsWith(uname)) {
+        message = message.slice(uname.length).trim();
+      }
+      if (!message || message.length < 2) return null;
+      return { el, rpid, mid, uname, message };
+    } catch (e) {
+      console.warn(TAG$1, "  ❌ extractComment 异常:", e);
+      return null;
+    }
+  }
+  const IGNORE_TEXTS = /* @__PURE__ */ new Set([
+    "回复",
+    "举报",
+    "点赞",
+    "踩",
+    "收起",
+    "展开",
+    "·",
+    ">>",
+    "查看全文",
+    "热评",
+    "置顶",
+    "UP主",
+    "笔记",
+    "UP主觉得很赞",
+    "UP主赞过",
+    "发起会话",
+    "关注",
+    "已关注",
+    "复制评论链接",
+    "加入黑名单",
+    "记笔记"
+  ]);
+  function isUIText(s) {
+    if (/^(\d+|[\d.]+[万亿]?|\d+:\d+|\d+楼|#\d+)$/.test(s)) return true;
+    if (/^\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}$/.test(s)) return true;
+    if (/^(刚刚|\d+分钟前|\d+小时前|昨天|\d+天前)$/.test(s)) return true;
+    if (/^(共\s*\d+\s*条回复|展开\s*\d+\s*条回复|查看全部\s*\d+\s*条)$/.test(s))
+      return true;
+    return false;
+  }
+  function strHash(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
+    }
+    return h;
+  }
+  let isFlushing = false;
+  async function flushBatch() {
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    if (pendingBatch.length === 0 || isFlushing) return;
+    isFlushing = true;
+    const batch = pendingBatch.splice(0);
+    console.log(TAG$1, `🚀 AI判定: ${batch.length} 条评论`);
+    const config = getConfig();
+    if (!currentContext.videoTitle) extractVideoInfo();
+    const replies = batch.map((p) => ({
+      rpid: p.rpid,
+      oid: currentContext.oid,
+      mid: p.mid,
+      root: 0,
+      parent: 0,
+      count: 0,
+      rcount: 0,
+      like: 0,
+      ctime: 0,
+      content: { message: p.message },
+      member: { mid: String(p.mid), uname: p.uname, avatar: "" }
+    }));
+    try {
+      const result = await filterReplies(
+        config,
+        replies,
+        currentContext,
+        ruozhiStats
+      );
+      ruozhiStats.totalScanned += batch.length;
+      if (result.violations.size > 0) {
+        console.log(TAG$1, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
+        let cleaned = 0;
+        for (const [rpid, v] of result.violations) {
+          const p = batch.find((x) => x.rpid === rpid);
+          if (!p) continue;
+          if (config.foldMode === "none" ? hideEl(p.el) : foldEl(p.el, p, v, config.foldMode))
+            cleaned++;
+        }
+        try {
+          updateStats(ruozhiStats);
+        } catch {
+        }
+      } else {
+        try {
+          updateStats(ruozhiStats);
+        } catch {
+        }
+      }
+      saveStats(ruozhiStats);
+    } catch (err) {
+      console.error(TAG$1, "❌ AI失败:", err);
+    } finally {
+      isFlushing = false;
+    }
+  }
+  function foldEl(el, info, verdict, style = "classic") {
+    var _a, _b;
+    try {
+      const labelMap = {
+        low: "⚠️ 轻微不适",
+        medium: "🚫 违规言论",
+        high: "⛔ 严重违规",
+        block: "🛑 永久拉黑"
+      };
+      const label = labelMap[verdict.severity] ?? "🚫 已过滤";
+      const severityAccent = {
+        low: "#c8c8c8",
+        medium: "#d4a574",
+        high: "#d47574",
+        block: "#b87070"
+      };
+      const accent = severityAccent[verdict.severity] ?? "#ccc";
+      const html = style === "classic" ? `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
+<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span><span style="float:right;font-size:11px;color:#999">▼ 展开</span>
+</div><div class="ruozhi-original" style="display:none;padding:8px 12px;background:#f8f9fa;border-left:3px solid #ffc107;margin:4px 0;border-radius:0 6px 6px 0;font-size:13px">
+<div style="margin-bottom:6px;font-size:12px;color:#999">🧠 AI判定: <strong>${esc(verdict.reason)}</strong></div>
+<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>` : `<div class="ruozhi-folded" style="background:#fafafa;border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:#aaa;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
+<span style="margin-right:6px">${label}</span><span style="color:#999">${esc(info.uname)}</span><span style="float:right;font-size:10px;color:#ccc">▾</span>
+</div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:#fafafa;border-left:3px solid #ddd;margin:0 0 4px 0;font-size:12px;color:#999">
+<div style="margin-bottom:4px;font-size:11px;color:#bbb">AI判定: ${esc(verdict.reason)}</div>
+<div style="color:#bbb;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>`;
+      const wrapper = document.createElement("div");
+      wrapper.innerHTML = html;
+      const foldElDiv = wrapper.firstElementChild;
+      const origElDiv = foldElDiv.nextElementSibling;
+      (_a = el.parentNode) == null ? void 0 : _a.insertBefore(foldElDiv, el);
+      (_b = el.parentNode) == null ? void 0 : _b.insertBefore(origElDiv, el);
+      el.style.display = "none";
+      foldElDiv.addEventListener("click", () => {
+        const hidden = origElDiv.style.display === "none";
+        origElDiv.style.display = hidden ? "block" : "none";
+        const arrow = foldElDiv.querySelector("span:last-child");
+        if (arrow) arrow.textContent = hidden ? "▴" : "▾";
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function hideEl(el) {
+    try {
+      el.style.display = "none";
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function esc(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+  function watchNewComments() {
+    const root = getCommentRoot();
+    if (!root) {
+      setTimeout(() => watchNewComments(), 3e3);
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (!batchTimer) {
+        batchTimer = setTimeout(() => {
+          scanPage();
+          batchTimer = null;
+        }, 500);
+      }
+    });
+    observer.observe(root, {
+      childList: true,
+      subtree: true
+    });
+    console.log(TAG$1, "👁️ MutationObserver 已绑定到评论根节点");
+  }
+  function watchScrollLoading() {
+    let scrollTimer = null;
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (scrollTimer) clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => {
+          scanPage();
+          if (pendingBatch.length >= 10) flushBatch();
+        }, 600);
+      },
+      { passive: true }
+    );
+  }
+  function startDOMScanner() {
+    setTimeout(() => scanPage(), 4e3);
+    setTimeout(() => scanPage(), 8e3);
+    setInterval(() => {
+      scanPage();
+      if (pendingBatch.length >= 10) flushBatch();
+    }, 5e3);
+    setTimeout(() => watchNewComments(), 2e3);
+    watchScrollLoading();
+    const uw = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+    uw.__ruozhi_diag = () => {
+      fullPageDiagnostic();
+      scanPage();
+    };
+    uw.__ruozhi_scan = () => scanPage();
+    uw.__ruozhi_flush = () => flushBatch();
+    uw.__ruozhi_inspect = () => inspectShadowRoot();
+    uw.__ruozhi_reset_stats = () => resetStats();
+  }
+  function resetStats() {
+    ruozhiStats.totalFiltered = 0;
+    ruozhiStats.totalScanned = 0;
+    ruozhiStats.apiCalls = 0;
+    ruozhiStats.totalTokens = 0;
+    ruozhiStats.promptTokens = 0;
+    ruozhiStats.completionTokens = 0;
+    ruozhiStats.severityCounts = {};
+    ruozhiStats.lastUpdate = 0;
+    saveStats(ruozhiStats);
+  }
   let panelVisible = false;
   let panelRoot = null;
   let fabBadge = null;
@@ -540,7 +1370,11 @@ ${ctxBlock}
     try {
       const raw = GM_getValue("ruozhi-config", "");
       if (raw) {
-        return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.foldMode === "boolean") {
+          parsed.foldMode = parsed.foldMode ? "classic" : "none";
+        }
+        return { ...DEFAULT_CONFIG, ...parsed };
       }
     } catch {
     }
@@ -713,10 +1547,13 @@ ${ctxBlock}
     </div>
 
     <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input id="ruozhi-fold-mode" type="checkbox" ${config.foldMode ? "checked" : ""}>
-        折叠模式 (关闭后完全隐藏)
-      </label>
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">👁️ 折叠样式</label>
+      <select id="ruozhi-fold-mode"
+        style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;background:#fff">
+        <option value="classic" ${config.foldMode === "classic" ? "selected" : ""}>⚠️ 经典警告 — 黄底醒目提示</option>
+        <option value="light" ${config.foldMode === "light" ? "selected" : ""}>▎极简标记 — 灰线弱提示</option>
+        <option value="none" ${config.foldMode === "none" ? "selected" : ""}>🚫 完全隐藏 — 直接移除评论</option>
+      </select>
     </div>
 
     <div style="margin-bottom:12px">
@@ -831,7 +1668,7 @@ ${ctxBlock}
         apiEndpoint: ((_b2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _b2.value) ?? config.apiEndpoint,
         prompt: ((_c2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _c2.value) ?? config.prompt,
         enableAI: ((_d2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _d2.checked) ?? true,
-        foldMode: ((_e = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e.checked) ?? true,
+        foldMode: ((_e = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e.value) ?? "classic",
         enableBlacklist: ((_f = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f.checked) ?? true,
         pricePerMToken: parseFloat(
           ((_g = root.querySelector("#ruozhi-price")) == null ? void 0 : _g.value) || "1.1"
@@ -873,6 +1710,13 @@ ${ctxBlock}
         blContent.innerHTML = '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
       }
     });
+    root.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target.closest("#ruozhi-clear-stats")) return;
+      if (!confirm("确定要重置所有统计数据吗？")) return;
+      resetStats();
+      updateStatsPanel();
+    });
   }
   function showStatus(root, msg, color) {
     const el = root.querySelector("#ruozhi-status");
@@ -908,7 +1752,11 @@ ${ctxBlock}
     contentEl.innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:8px;color:#333">📈 累计统计</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
+          <div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div>
+          <div style="font-size:11px;color:#999">已扫描</div>
+        </div>
         <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
           <div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div>
           <div style="font-size:11px;color:#999">已过滤</div>
@@ -925,6 +1773,10 @@ ${ctxBlock}
           <div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div>
           <div style="font-size:11px;color:#999">预估费用</div>
         </div>
+        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats">
+          <div style="font-size:16px;color:#f56c6c">🗑️</div>
+          <div style="font-size:11px;color:#f56c6c">重置统计</div>
+        </div>
       </div>
     </div>
     <div style="margin-top:12px">
@@ -939,9 +1791,9 @@ ${ctxBlock}
   function bindBlacklistEvents(container) {
     container.querySelectorAll(".ruozhi-remove-bl").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const uid = parseInt(btn.dataset.uid ?? "0");
-        if (uid) {
-          await removeFromBlacklist(uid);
+        const mid = parseInt(btn.dataset.mid ?? "0");
+        if (mid) {
+          await removeFromBlacklist(mid);
           const contentEl = container.querySelector("#ruozhi-blacklist-content") ?? container;
           contentEl.innerHTML = await buildBlacklistPanelHTML();
           bindBlacklistEvents(contentEl);
@@ -949,776 +1801,9 @@ ${ctxBlock}
       });
     });
   }
-  const TAG$1 = "[ruozhi-filter]";
-  async function filterReplies(config, replies, ctx, stats) {
-    const violations = /* @__PURE__ */ new Map();
-    let newBlacklistEntries = 0;
-    if (replies.length === 0) return { violations, newBlacklistEntries };
-    const needAICheck = [];
-    for (const reply of replies) {
-      if (config.enableBlacklist) {
-        const blRecord = await isBlacklisted(reply.mid, reply.member.uname);
-        if (blRecord) {
-          violations.set(reply.rpid, {
-            reason: `[黑名单] ${blRecord.reason}`,
-            severity: blRecord.severity
-          });
-          if (stats) {
-            stats.totalFiltered++;
-            stats.severityCounts[blRecord.severity] = (stats.severityCounts[blRecord.severity] ?? 0) + 1;
-          }
-          continue;
-        }
-      }
-      const hash = commentHash(reply.content.message, reply.mid);
-      const cached = await getCache(hash);
-      if (cached && cached.violation) {
-        violations.set(reply.rpid, {
-          reason: `[缓存] ${cached.reason}`,
-          severity: cached.severity
-        });
-        if (stats) {
-          stats.totalFiltered++;
-          stats.severityCounts[cached.severity] = (stats.severityCounts[cached.severity] ?? 0) + 1;
-        }
-        continue;
-      }
-      if (config.enableAI) {
-        needAICheck.push(reply);
-      }
-    }
-    if (needAICheck.length > 0 && config.enableAI && config.apiKey) {
-      try {
-        const result = await batchJudge(config, needAICheck, ctx);
-        if (stats && result.usage) {
-          stats.totalTokens += result.usage.total_tokens ?? 0;
-          stats.promptTokens += result.usage.prompt_tokens ?? 0;
-          stats.completionTokens += result.usage.completion_tokens ?? 0;
-          stats.apiCalls++;
-        }
-        for (const v of result.verdicts) {
-          const reply = needAICheck.find((r) => r.rpid === v.rpid);
-          if (reply) {
-            const hash = commentHash(reply.content.message, reply.mid);
-            await setCache({
-              hash,
-              violation: v.violation,
-              reason: v.reason,
-              severity: v.severity,
-              timestamp: Date.now()
-            });
-          }
-          if (v.violation) {
-            violations.set(v.rpid, {
-              reason: v.reason,
-              severity: v.severity
-            });
-            if (stats) {
-              stats.totalFiltered++;
-              stats.severityCounts[v.severity] = (stats.severityCounts[v.severity] ?? 0) + 1;
-            }
-            if ((v.severity === "block" || v.severity === "high") && reply) {
-              console.log(TAG$1, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
-              await addToBlacklist({
-                mid: v.mid,
-                uname: reply.member.uname,
-                rpid: v.rpid,
-                message: reply.content.message,
-                reason: v.reason,
-                videoTitle: ctx.videoTitle,
-                videoUrl: window.location.href,
-                timestamp: Date.now(),
-                severity: v.severity,
-                source: "auto"
-              });
-              newBlacklistEntries++;
-            }
-          }
-        }
-      } catch (err) {
-        console.error(TAG$1, "❌ AI判定失败:", err);
-      }
-    } else if (needAICheck.length > 0 && !config.apiKey) {
-      console.warn(TAG$1, "⚠️ 未配置 API Key，跳过 AI 判定");
-    }
-    if (stats) stats.lastUpdate = Date.now();
-    return { violations, newBlacklistEntries };
-  }
   const TAG = "[ruozhi-filter]";
-  const ruozhiStats = {
-    totalFiltered: 0,
-    totalScanned: 0,
-    apiCalls: 0,
-    totalTokens: 0,
-    promptTokens: 0,
-    completionTokens: 0,
-    severityCounts: {},
-    lastUpdate: 0
-  };
-  if (typeof window !== "undefined") {
-    window.__ruozhi_stats = ruozhiStats;
-  }
-  let updateStats = () => {
-  };
-  function setUpdateStats(fn) {
-    updateStats = fn;
-  }
-  let currentContext = { oid: 0, videoTitle: "", videoDesc: "" };
-  let getConfig = () => {
-    try {
-      const raw = GM_getValue("ruozhi-config", "");
-      if (raw) return JSON.parse(raw);
-    } catch {
-    }
-    return {
-      apiKey: "",
-      apiEndpoint: "https://api.deepseek.com/chat/completions",
-      model: "deepseek-chat",
-      prompt: "",
-      foldMode: true,
-      enableAI: true,
-      enableBlacklist: true,
-      blacklistStrictness: 1,
-      pricePerMToken: 1.1,
-      sendUname: false,
-      sendMid: false,
-      sendVideoDesc: false,
-      filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
-- **人身攻击**：针对个人的侮辱、谩骂、诅咒
-- **引战/煽动**：故意挑起争端，使用极端化言论
-- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
-    };
-  };
-  function refreshConfig(cfg) {
-    getConfig = () => cfg;
-  }
-  function updateContext(ctx) {
-    if (ctx.oid) currentContext.oid = ctx.oid;
-    if (ctx.videoTitle) currentContext.videoTitle = ctx.videoTitle;
-    if (ctx.videoDesc) currentContext.videoDesc = ctx.videoDesc;
-  }
-  function extractVideoInfo() {
-    var _a, _b, _c, _d;
-    const titleEl = document.querySelector("h1.video-title") ?? document.querySelector(".video-info-title .tit") ?? document.querySelector("[data-title]");
-    if (titleEl) {
-      currentContext.videoTitle = ((_a = titleEl.dataset) == null ? void 0 : _a.title) ?? titleEl.getAttribute("data-title") ?? titleEl.getAttribute("title") ?? ((_b = titleEl.textContent) == null ? void 0 : _b.trim()) ?? "";
-    }
-    const descEl = document.querySelector("#v_desc .desc-info-text") ?? document.querySelector(".desc-info-text") ?? document.querySelector(".basic-desc-info");
-    if (descEl) {
-      const t = ((_c = descEl.textContent) == null ? void 0 : _c.trim()) ?? "";
-      currentContext.videoDesc = t === "-" ? "" : t;
-    }
-    const bc = document.querySelector("bili-comments");
-    if (bc) {
-      const p = bc.getAttribute("data-params");
-      if (p) {
-        const pts = p.split(",");
-        if (pts.length >= 2) currentContext.oid = parseInt(pts[1]) || 0;
-      }
-    }
-    if (!currentContext.oid) {
-      try {
-        for (const s of document.querySelectorAll("script")) {
-          const m = (s.textContent ?? "").match(
-            /window\.__INITIAL_STATE__\s*=\s*(\{.+?\});/
-          );
-          if (m) {
-            const data = JSON.parse(m[1]);
-            const aid = ((_d = data == null ? void 0 : data.videoData) == null ? void 0 : _d.aid) ?? (data == null ? void 0 : data.aid);
-            if (aid) {
-              currentContext.oid = aid;
-              break;
-            }
-          }
-        }
-      } catch {
-      }
-    }
-    if (!currentContext.oid) {
-      location.pathname.match(/\/video\/(BV\w+)/);
-    }
-  }
-  function fullPageDiagnostic() {
-    var _a, _b;
-    console.log(TAG, "══════ 诊断 ══════");
-    const bc = document.querySelector("bili-comments");
-    console.log(
-      TAG,
-      `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`
-    );
-    const containerSelectors = [
-      "#comment",
-      "#commentapp",
-      ".comment-container",
-      ".reply-list",
-      ".bb-comment",
-      "[class*='comment']",
-      "[class*='reply']",
-      "[id*='comment']",
-      "[id*='reply']"
-    ];
-    for (const sel of containerSelectors) {
-      const els = document.querySelectorAll(sel);
-      if (els.length > 0 && els.length < 200) {
-        const first = els[0];
-        const id = first.id ? `#${first.id}` : "(无id)";
-        const cls = first.className ? "." + first.className.split(" ").slice(0, 3).join(".") : "(无class)";
-        console.log(
-          TAG,
-          `  📌 "${sel}" → ${els.length}个 ${first.tagName.toLowerCase()}${id}${cls}`
-        );
-      }
-    }
-    if (bc && bc.shadowRoot) {
-      const sr = bc.shadowRoot;
-      const allNodes = sr.querySelectorAll("*");
-      console.log(TAG, `🔬 ShadowRoot 总节点: ${allNodes.length}`);
-      const tagCounts = /* @__PURE__ */ new Map();
-      allNodes.forEach((n) => {
-        const t = n.tagName.toLowerCase();
-        tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
-      });
-      console.log(
-        TAG,
-        `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`
-      );
-      const itemChecks = [
-        "[data-rpid]",
-        ".reply-item",
-        ".comment-item",
-        ".reply-wrap",
-        ".con",
-        "bb-comment"
-      ];
-      for (const sel of itemChecks) {
-        const count = sr.querySelectorAll(sel).length;
-        console.log(TAG, `  🎯 "${sel}" → ${count}个`);
-      }
-      console.log(TAG, "📋 ShadowRoot 直接子元素:");
-      for (const child of sr.children) {
-        const tag = child.tagName.toLowerCase();
-        const id = child.id ? `#${child.id}` : "";
-        const cls = child.className ? "." + child.className.split(" ").slice(0, 3).join(".") : "";
-        const text = ((_a = child.innerText) == null ? void 0 : _a.slice(0, 60)) ?? "";
-        const childCount = child.querySelectorAll("*").length;
-        console.log(
-          TAG,
-          `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`
-        );
-        if (childCount > 0 && childCount <= 30) {
-          for (const c2 of child.children) {
-            const t2 = c2.tagName.toLowerCase();
-            const id2 = c2.id ? `#${c2.id}` : "";
-            const cls2 = c2.className ? "." + c2.className.split(" ").slice(0, 2).join(".") : "";
-            const txt2 = ((_b = c2.innerText) == null ? void 0 : _b.slice(0, 50)) ?? "";
-            const dataAttrs = c2 instanceof HTMLElement ? c2.getAttributeNames().filter((a) => a.startsWith("data-")).join(", ") : "";
-            console.log(
-              TAG,
-              `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`
-            );
-          }
-        }
-      }
-    }
-    const mainSections = [
-      "#reply",
-      "#danmakuBox",
-      ".player-auxiliary",
-      ".video-info-container",
-      ".video-data",
-      "section"
-    ];
-    console.log(TAG, "📐 页面结构:");
-    for (const sel of mainSections) {
-      const els = document.querySelectorAll(sel);
-      if (els.length > 0) console.log(TAG, `  ${sel}: ${els.length}个`);
-    }
-    console.log(TAG, "══════ 完成 ══════");
-  }
-  function inspectShadowRoot() {
-    const bc = document.querySelector("bili-comments");
-    if (!bc || !bc.shadowRoot) {
-      console.log(TAG, "❌ bili-comments 或其 shadowRoot 未找到");
-      return;
-    }
-    const sr = bc.shadowRoot;
-    console.log(TAG, "══════ ShadowRoot 完整探查 ══════");
-    console.log(TAG, `总节点数: ${sr.querySelectorAll("*").length}`);
-    console.log(TAG, `直接子元素数: ${sr.children.length}`);
-    function dump(el, depth = 0) {
-      var _a, _b;
-      if (depth > 4) return;
-      const indent = "  ".repeat(depth);
-      const tag = el.tagName.toLowerCase();
-      const id = el.id ? `#${el.id}` : "";
-      const cls = el.className ? "." + el.className.split(" ").slice(0, 3).join(".") : "";
-      const attrs = el instanceof HTMLElement ? el.getAttributeNames().filter((a) => a !== "class" && a !== "id").map((a) => `${a}="${el.getAttribute(a)}"`.slice(0, 60)).join(" ") : "";
-      const text = ((_b = (_a = el.innerText) == null ? void 0 : _a.slice(0, 80)) == null ? void 0 : _b.replace(/\n/g, " ")) ?? "";
-      console.log(TAG, `${indent}<${tag}${id}${cls}> ${attrs} "${text}"`);
-      if (el.children.length <= 4) {
-        for (const c of el.children) dump(c, depth + 1);
-      } else if (depth < 3) {
-        console.log(TAG, `${indent}  ... ${el.children.length}个子元素，取前4个`);
-        for (let i = 0; i < Math.min(4, el.children.length); i++) {
-          dump(el.children[i], depth + 1);
-        }
-      }
-    }
-    for (const child of sr.children) {
-      dump(child, 0);
-    }
-    console.log(TAG, "══════ 探查完成 ══════");
-  }
-  let pendingBatch = [];
-  let batchTimer = null;
-  const scannedRpids = /* @__PURE__ */ new Set();
-  function getCommentRoot() {
-    const bc = document.querySelector("bili-comments");
-    if (bc && bc.shadowRoot) return bc.shadowRoot;
-    if (bc) return bc;
-    const containerSelectors = [
-      "#comment",
-      "#commentapp",
-      ".comment-container",
-      ".reply-list",
-      ".bb-comment"
-    ];
-    for (const sel of containerSelectors) {
-      const el = document.querySelector(sel);
-      if (el && el.querySelectorAll("*").length > 5) return el;
-    }
-    return null;
-  }
-  function findCommentElements(root) {
-    var _a;
-    let items = root.querySelectorAll("bili-comment-thread-renderer");
-    if (items.length > 0) return items;
-    items = root.querySelectorAll("[data-rpid]");
-    if (items.length > 0) return items;
-    items = root.querySelectorAll(
-      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment"
-    );
-    if (items.length > 0) return items;
-    const divs = root.querySelectorAll("div");
-    if (divs.length > 500) return [];
-    const candidates = [];
-    for (const d of divs) {
-      if (candidates.length >= 100) break;
-      const childCount = d.querySelectorAll("*").length;
-      if (childCount < 3 || childCount > 80) continue;
-      const t = ((_a = d.innerText) == null ? void 0 : _a.trim()) ?? "";
-      if (t.length < 30 || t.length > 5e3) continue;
-      if (!t.includes("回复") || !t.includes("举报")) continue;
-      candidates.push(d);
-    }
-    return candidates;
-  }
-  function scanPage() {
-    const root = getCommentRoot();
-    if (!root) return;
-    const items = findCommentElements(root);
-    if (items.length === 0) return;
-    let found = 0;
-    items.forEach((el) => {
-      const info = extractComment(el);
-      if (!info) return;
-      if (scannedRpids.has(info.rpid)) return;
-      scannedRpids.add(info.rpid);
-      found++;
-      const config = getConfig();
-      if (!config.enableAI && !config.enableBlacklist) return;
-      pendingBatch.push(info);
-      injectManualBlacklistButton(el, info);
-    });
-    if (found > 0) {
-      if (pendingBatch.length >= 20) flushBatch();
-      else if (!batchTimer) batchTimer = setTimeout(flushBatch, 800);
-    }
-  }
-  const blacklistButtonInjected = /* @__PURE__ */ new WeakSet();
-  const BL_BTN_STYLE = {
-    position: "absolute",
-    top: "6px",
-    right: "8px",
-    zIndex: "10",
-    opacity: "0",
-    padding: "1px 8px",
-    fontSize: "11px",
-    color: "#aaa",
-    background: "rgba(255,255,255,0.92)",
-    border: "1px solid #e8e8e8",
-    borderRadius: "10px",
-    cursor: "pointer",
-    transition: "opacity 0.2s, color 0.15s, border-color 0.15s",
-    userSelect: "none",
-    fontFamily: "system-ui, -apple-system, sans-serif",
-    lineHeight: "18px",
-    whiteSpace: "nowrap",
-    backdropFilter: "blur(2px)"
-  };
-  const BL_BTN_HOVER = {
-    color: "#d9534f",
-    borderColor: "#d9534f",
-    background: "#fff5f5",
-    opacity: "1"
-  };
-  const BL_BTN_DONE = {
-    color: "#d9534f",
-    borderColor: "#f5c6cb",
-    background: "#fff0f0",
-    opacity: "1",
-    cursor: "default"
-  };
-  function applyStyles(el, styles) {
-    for (const [k, v] of Object.entries(styles)) {
-      el.style[k] = v;
-    }
-  }
-  function injectManualBlacklistButton(el, info) {
-    if (blacklistButtonInjected.has(el)) return;
-    blacklistButtonInjected.add(el);
-    if (!(el instanceof HTMLElement)) return;
-    const computed = getComputedStyle(el);
-    if (computed.position === "static") {
-      el.style.position = "relative";
-    }
-    const btn = document.createElement("button");
-    btn.textContent = "🚫 拉黑";
-    btn.title = `将 ${info.uname} 加入黑名单`;
-    applyStyles(btn, BL_BTN_STYLE);
-    el.appendChild(btn);
-    let isDone = false;
-    el.addEventListener("mouseenter", () => {
-      if (isDone) return;
-      btn.style.opacity = "1";
-    });
-    el.addEventListener("mouseleave", () => {
-      if (isDone) return;
-      btn.style.opacity = "0";
-    });
-    btn.addEventListener("mouseenter", (e) => {
-      e.stopPropagation();
-      if (!isDone) applyStyles(btn, BL_BTN_HOVER);
-    });
-    btn.addEventListener("mouseleave", (e) => {
-      e.stopPropagation();
-      if (!isDone) applyStyles(btn, BL_BTN_STYLE);
-    });
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      if (!confirm(
-        `确定要将用户 "${info.uname}" 加入黑名单吗？
-该用户的所有评论将被隐藏。`
-      )) {
-        return;
-      }
-      try {
-        const config = getConfig();
-        await addToBlacklist({
-          mid: info.mid,
-          uname: info.uname,
-          rpid: info.rpid,
-          message: info.message,
-          reason: "[手动拉黑]",
-          videoTitle: currentContext.videoTitle,
-          videoUrl: window.location.href,
-          timestamp: Date.now(),
-          severity: "block",
-          source: "manual"
-        });
-        console.log(TAG, `🚫 手动拉黑: ${info.uname}`);
-        if (config.foldMode) {
-          foldEl(el, info, { reason: "[手动拉黑]", severity: "block" });
-        } else {
-          hideEl(el);
-        }
-        isDone = true;
-        btn.textContent = "✅ 已拉黑";
-        applyStyles(btn, BL_BTN_DONE);
-      } catch (err) {
-        console.error(TAG, "❌ 手动拉黑失败:", err);
-      }
-    });
-  }
-  function extractComment(el) {
-    var _a;
-    try {
-      let deepInnerText = function(root) {
-        var _a2;
-        let text = "";
-        for (const child of root.children) {
-          const el2 = child;
-          const tag2 = el2.tagName.toLowerCase();
-          if (tag2 === "style") continue;
-          if (el2.shadowRoot) {
-            text += deepInnerText(el2.shadowRoot) + "\n";
-          } else if (el2.children.length > 0) {
-            text += deepInnerText(el2) + "\n";
-          } else {
-            const t = (_a2 = el2.innerText) == null ? void 0 : _a2.trim();
-            if (t) text += t + "\n";
-          }
-        }
-        return text;
-      }, findRpid = function(root) {
-        const el2 = root.querySelector("[data-rpid]");
-        if (el2) return el2.getAttribute("data-rpid");
-        for (const child of root.children) {
-          const c = child;
-          if (c.shadowRoot) {
-            const r = findRpid(c.shadowRoot);
-            if (r) return r;
-          }
-        }
-        return null;
-      }, findMid = function(root) {
-        const el2 = root.querySelector("[data-mid], [data-uid]");
-        if (el2) return el2.getAttribute("data-mid") ?? el2.getAttribute("data-uid");
-        for (const child of root.children) {
-          const c = child;
-          if (c.shadowRoot) {
-            const r = findMid(c.shadowRoot);
-            if (r) return r;
-          }
-        }
-        return null;
-      };
-      const tag = el.tagName.toLowerCase();
-      let fullText = "";
-      if (el.shadowRoot) {
-        fullText = deepInnerText(el.shadowRoot).trim();
-      }
-      if (!fullText) {
-        fullText = ((_a = el.innerText) == null ? void 0 : _a.trim()) ?? "";
-      }
-      if (fullText.length < 3) return null;
-      let rpid = 0;
-      const rpidStr = el.getAttribute("data-rpid") ?? (el.shadowRoot ? findRpid(el.shadowRoot) : null);
-      if (rpidStr) rpid = parseInt(rpidStr);
-      if (!rpid) {
-        const hashInput = `${tag}:${fullText.slice(0, 300)}`;
-        rpid = strHash(hashInput);
-      }
-      let mid = 0;
-      const midStr = el.getAttribute("data-mid") ?? el.getAttribute("data-uid") ?? (el.shadowRoot ? findMid(el.shadowRoot) : null);
-      if (midStr) mid = parseInt(midStr) || 0;
-      const lines = fullText.split("\n").map((l) => l.trim()).filter(Boolean);
-      const contentLines = lines.filter((l) => {
-        if (IGNORE_TEXTS.has(l)) return false;
-        if (isUIText(l)) return false;
-        return true;
-      });
-      if (contentLines.length === 0) return null;
-      const uname = contentLines.find(
-        (l) => l.length >= 2 && l.length <= 20 && !/^\d/.test(l) && !l.includes("·") && !l.includes("分钟") && !l.includes("小时") && !l.includes("刚刚") && !l.includes("昨天")
-      ) ?? "未知用户";
-      const msgParts = contentLines.filter(
-        (l) => l !== uname || contentLines.filter((x) => x === l).length > 1
-      );
-      let message = msgParts.join(" ");
-      if (uname !== "未知用户" && message.startsWith(uname)) {
-        message = message.slice(uname.length).trim();
-      }
-      if (!message || message.length < 2) return null;
-      return { el, rpid, mid, uname, message };
-    } catch (e) {
-      console.warn(TAG, "  ❌ extractComment 异常:", e);
-      return null;
-    }
-  }
-  const IGNORE_TEXTS = /* @__PURE__ */ new Set([
-    "回复",
-    "举报",
-    "点赞",
-    "踩",
-    "收起",
-    "展开",
-    "·",
-    ">>",
-    "查看全文",
-    "热评",
-    "置顶",
-    "UP主",
-    "笔记",
-    "UP主觉得很赞",
-    "UP主赞过",
-    "发起会话",
-    "关注",
-    "已关注",
-    "复制评论链接",
-    "加入黑名单",
-    "记笔记"
-  ]);
-  function isUIText(s) {
-    if (/^(\d+|[\d.]+[万亿]?|\d+:\d+|\d+楼|#\d+)$/.test(s)) return true;
-    if (/^\d{4}-\d{2}-\d{2}\s*\d{2}:\d{2}$/.test(s)) return true;
-    if (/^(刚刚|\d+分钟前|\d+小时前|昨天|\d+天前)$/.test(s)) return true;
-    return false;
-  }
-  function strHash(s) {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) {
-      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
-    }
-    return h;
-  }
-  let isFlushing = false;
-  async function flushBatch() {
-    if (batchTimer) {
-      clearTimeout(batchTimer);
-      batchTimer = null;
-    }
-    if (pendingBatch.length === 0 || isFlushing) return;
-    isFlushing = true;
-    const batch = pendingBatch.splice(0);
-    console.log(TAG, `🚀 AI判定: ${batch.length} 条评论`);
-    const config = getConfig();
-    if (!currentContext.videoTitle) extractVideoInfo();
-    const replies = batch.map((p) => ({
-      rpid: p.rpid,
-      oid: currentContext.oid,
-      mid: p.mid,
-      root: 0,
-      parent: 0,
-      count: 0,
-      rcount: 0,
-      like: 0,
-      ctime: 0,
-      content: { message: p.message },
-      member: { mid: String(p.mid), uname: p.uname, avatar: "" }
-    }));
-    try {
-      const result = await filterReplies(
-        config,
-        replies,
-        currentContext,
-        ruozhiStats
-      );
-      if (result.violations.size > 0) {
-        console.log(TAG, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
-        let cleaned = 0;
-        for (const [rpid, v] of result.violations) {
-          const p = batch.find((x) => x.rpid === rpid);
-          if (!p) continue;
-          if (config.foldMode ? foldEl(p.el, p, v) : hideEl(p.el)) cleaned++;
-        }
-        try {
-          updateStats(ruozhiStats);
-        } catch {
-        }
-      } else {
-        try {
-          updateStats(ruozhiStats);
-        } catch {
-        }
-      }
-    } catch (err) {
-      console.error(TAG, "❌ AI失败:", err);
-    } finally {
-      isFlushing = false;
-    }
-  }
-  function foldEl(el, info, verdict) {
-    var _a, _b;
-    try {
-      const labelMap = {
-        low: "⚠️ 轻微不适",
-        medium: "🚫 违规言论",
-        high: "⛔ 严重违规",
-        block: "🛑 永久拉黑"
-      };
-      const label = labelMap[verdict.severity] ?? "🚫 已过滤";
-      const html = `<div class="ruozhi-folded" style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;margin:4px 0;font-size:13px;color:#856404;cursor:pointer;user-select:none;font-family:system-ui,sans-serif">
-<span style="margin-right:8px">${label}</span><span style="font-weight:600">${esc(info.uname)}</span><span style="margin:0 8px;color:#ccc">|</span><span style="font-size:12px;color:#aaa">${esc(verdict.reason)}</span><span style="float:right;font-size:11px;color:#999">▼ 展开</span>
-</div><div class="ruozhi-original" style="display:none;padding:8px 12px;background:#f8f9fa;border-left:3px solid #ffc107;margin:4px 0;border-radius:0 6px 6px 0;font-size:13px">
-<div style="margin-bottom:6px;font-size:12px;color:#999">🧠 AI判定: <strong>${esc(verdict.reason)}</strong></div>
-<div style="color:#333;white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div></div>`;
-      const wrapper = document.createElement("div");
-      wrapper.innerHTML = html;
-      const foldElDiv = wrapper.firstElementChild;
-      const origElDiv = foldElDiv.nextElementSibling;
-      (_a = el.parentNode) == null ? void 0 : _a.insertBefore(foldElDiv, el);
-      (_b = el.parentNode) == null ? void 0 : _b.insertBefore(origElDiv, el);
-      el.style.display = "none";
-      foldElDiv.addEventListener("click", () => {
-        const hidden = origElDiv.style.display === "none";
-        origElDiv.style.display = hidden ? "block" : "none";
-        const spanEl = foldElDiv.querySelector("span:last-child");
-        if (spanEl) spanEl.textContent = hidden ? "▲ 收起" : "▼ 展开";
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  function hideEl(el) {
-    try {
-      el.style.display = "none";
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
-  }
-  function watchNewComments() {
-    const root = getCommentRoot();
-    if (!root) {
-      setTimeout(() => watchNewComments(), 3e3);
-      return;
-    }
-    const observer = new MutationObserver(() => {
-      if (!batchTimer) {
-        batchTimer = setTimeout(() => {
-          scanPage();
-          batchTimer = null;
-        }, 500);
-      }
-    });
-    observer.observe(root, {
-      childList: true,
-      subtree: true
-    });
-    console.log(TAG, "👁️ MutationObserver 已绑定到评论根节点");
-  }
-  function watchScrollLoading() {
-    let scrollTimer = null;
-    window.addEventListener(
-      "scroll",
-      () => {
-        if (scrollTimer) clearTimeout(scrollTimer);
-        scrollTimer = setTimeout(() => {
-          scanPage();
-          if (pendingBatch.length >= 10) flushBatch();
-        }, 600);
-      },
-      { passive: true }
-    );
-  }
-  function startDOMScanner() {
-    setTimeout(() => scanPage(), 4e3);
-    setTimeout(() => scanPage(), 8e3);
-    setInterval(() => {
-      scanPage();
-      if (pendingBatch.length >= 10) flushBatch();
-    }, 5e3);
-    setTimeout(() => watchNewComments(), 2e3);
-    watchScrollLoading();
-    const uw = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
-    uw.__ruozhi_diag = () => {
-      fullPageDiagnostic();
-      scanPage();
-    };
-    uw.__ruozhi_scan = () => scanPage();
-    uw.__ruozhi_flush = () => flushBatch();
-    uw.__ruozhi_inspect = () => inspectShadowRoot();
-  }
   async function main() {
+    console.log(TAG, "🚀 插件启动中...");
     let config = loadConfig();
     if (!config.apiKey) {
       config = { ...DEFAULT_CONFIG };
