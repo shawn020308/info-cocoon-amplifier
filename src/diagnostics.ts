@@ -2,8 +2,9 @@
 // diagnostics.ts - 页面诊断/调试函数
 // ============================================================
 
+import { log } from "./debug";
+
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 /** 全页面诊断：打印评论区结构信息 */
 export function fullPageDiagnostic(): void {
@@ -11,7 +12,7 @@ export function fullPageDiagnostic(): void {
 
   // 1. 寻找 bili-comments web component
   const bc = document.querySelector("bili-comments");
-  console.log(
+  log(
     TAG,
     `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`,
   );
@@ -36,7 +37,7 @@ export function fullPageDiagnostic(): void {
       const cls = (first as Element).className
         ? "." + (first as Element).className.split(" ").slice(0, 3).join(".")
         : "(无class)";
-      console.log(
+      log(
         TAG,
         `  📌 "${sel}" → ${els.length}个 ${(first as Element).tagName.toLowerCase()}${id}${cls}`,
       );
@@ -55,7 +56,7 @@ export function fullPageDiagnostic(): void {
       const t = n.tagName.toLowerCase();
       tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
     });
-    console.log(
+    log(
       TAG,
       `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`,
     );
@@ -84,10 +85,7 @@ export function fullPageDiagnostic(): void {
         : "";
       const text = (child as HTMLElement).innerText?.slice(0, 60) ?? "";
       const childCount = child.querySelectorAll("*").length;
-      console.log(
-        TAG,
-        `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`,
-      );
+      log(TAG, `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`);
 
       // 如果子元素少，继续展开一层
       if (childCount > 0 && childCount <= 30) {
@@ -106,7 +104,7 @@ export function fullPageDiagnostic(): void {
                   .filter((a) => a.startsWith("data-"))
                   .join(", ")
               : "";
-          console.log(
+          log(
             TAG,
             `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`,
           );

@@ -5,9 +5,9 @@ import type { PendingComment } from "./comment-extractor";
 import { getConfig, currentContext } from "./config";
 import { addToBlacklist } from "./db";
 import { hideEl, foldEl } from "./fold-ui";
+import { log } from "./debug";
 
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 /** 已注入拉黑按钮的元素集合（避免重复注入） */
 const blacklistButtonInjected = new WeakSet<Element>();

@@ -92,7 +92,7 @@ ${ctxBlock}
     if (!config.apiKey || replies.length === 0) return { verdicts: [] };
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(config, replies);
-    console.log(
+    log(
       TAG$6,
       "📤 请求体:",
       JSON.stringify({
@@ -124,10 +124,7 @@ ${ctxBlock}
           response_format: { type: "json_object" }
         })
       });
-      console.log(
-        TAG$6,
-        `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`
-      );
+      log(TAG$6, `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
       if (!response.ok) {
         const errText = await response.text();
         console.error(TAG$6, `❌ API ${response.status}:`, errText.slice(0, 200));
@@ -603,7 +600,7 @@ ${ctxBlock}
         }
       }
       memoryCacheReady = true;
-      console.log(
+      log(
         "[ruozhi-filter]",
         `📋 内存缓存就绪: 黑名单=${blByMid.size}条, 缓存=${cacheByHash.size}条`
       );
@@ -968,7 +965,7 @@ ${ctxBlock}
       if (!message || message.length < 2) return null;
       return { el, rpid, mid, uname, message };
     } catch (e) {
-      console.warn("[ruozhi-filter]", "  ❌ extractComment 异常:", e);
+      warn("[ruozhi-filter]", "  ❌ extractComment 异常:", e);
       return null;
     }
   }
@@ -1073,7 +1070,7 @@ ${ctxBlock}
     const reasonCopied = await copyToClipboard(reason);
     if (reasonCopied) showToast("✅ 已复制 AI 判定理由，请粘贴到举报框 (Cmd+V)");
     const renderer = findCommentRenderer(commentEl);
-    console.log(
+    log(
       TAG$5,
       "🔍 评论容器:",
       renderer.tagName.toLowerCase(),
@@ -1094,7 +1091,7 @@ ${ctxBlock}
       }
       const actionBar = deepFind(sr, "bili-comment-action-buttons-renderer");
       if (!actionBar || !actionBar.shadowRoot) {
-        console.warn(
+        warn(
           TAG$5,
           "⚠️ 未找到 action-buttons",
           "| 子元素:",
@@ -1478,7 +1475,7 @@ ${ctxBlock}
     var _a, _b;
     log(TAG$2, "══════ 诊断 ══════");
     const bc = document.querySelector("bili-comments");
-    console.log(
+    log(
       TAG$2,
       `📦 bili-comments: ${bc ? "✅ shadowRoot=" + !!bc.shadowRoot + " children=" + bc.children.length : "❌ 未找到"}`
     );
@@ -1499,7 +1496,7 @@ ${ctxBlock}
         const first = els[0];
         const id = first.id ? `#${first.id}` : "(无id)";
         const cls = first.className ? "." + first.className.split(" ").slice(0, 3).join(".") : "(无class)";
-        console.log(
+        log(
           TAG$2,
           `  📌 "${sel}" → ${els.length}个 ${first.tagName.toLowerCase()}${id}${cls}`
         );
@@ -1514,7 +1511,7 @@ ${ctxBlock}
         const t = n.tagName.toLowerCase();
         tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
       });
-      console.log(
+      log(
         TAG$2,
         `  标签分布: ${[...tagCounts.entries()].map(([k, v]) => `${k}x${v}`).join(", ")}`
       );
@@ -1537,10 +1534,7 @@ ${ctxBlock}
         const cls = child.className ? "." + child.className.split(" ").slice(0, 3).join(".") : "";
         const text = ((_a = child.innerText) == null ? void 0 : _a.slice(0, 60)) ?? "";
         const childCount = child.querySelectorAll("*").length;
-        console.log(
-          TAG$2,
-          `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`
-        );
+        log(TAG$2, `  <${tag}${id}${cls}> 子元素:${childCount} text:"${text}"`);
         if (childCount > 0 && childCount <= 30) {
           for (const c2 of child.children) {
             const t2 = c2.tagName.toLowerCase();
@@ -1548,7 +1542,7 @@ ${ctxBlock}
             const cls2 = c2.className ? "." + c2.className.split(" ").slice(0, 2).join(".") : "";
             const txt2 = ((_b = c2.innerText) == null ? void 0 : _b.slice(0, 50)) ?? "";
             const dataAttrs = c2 instanceof HTMLElement ? c2.getAttributeNames().filter((a) => a.startsWith("data-")).join(", ") : "";
-            console.log(
+            log(
               TAG$2,
               `    <${t2}${id2}${cls2}>${dataAttrs ? " [" + dataAttrs + "]" : ""} "${txt2}"`
             );
@@ -1617,7 +1611,7 @@ ${ctxBlock}
       return;
     }
     const items = findCommentElements(root);
-    console.log(
+    log(
       TAG$1,
       `🔍 scanPage: 找到 ${items.length} 个评论元素, root=${root === document ? "document" : root.tagName || "shadowRoot"}`
     );

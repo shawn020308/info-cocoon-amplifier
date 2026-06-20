@@ -8,6 +8,7 @@ import type {
   ReplyContext,
   AccumulatedStats,
 } from "./types";
+import { warn, log } from "./debug";
 import {
   isBlacklisted,
   addToBlacklist,
@@ -18,7 +19,6 @@ import {
 import { batchJudge } from "./api";
 
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 export interface FilterResult {
   violations: Map<number, { reason: string; severity: AIVerdict["severity"] }>;

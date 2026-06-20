@@ -12,9 +12,9 @@ import {
   setUpdateStats,
 } from "./interceptor";
 import { pruneCache, getBlacklistCount, initMemoryCache } from "./db";
+import { log } from "./debug";
 
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 async function main(): Promise<void> {
   log(TAG, "🚀 插件启动中...");

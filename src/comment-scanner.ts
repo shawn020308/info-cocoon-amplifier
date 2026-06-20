@@ -8,6 +8,7 @@ import { getCommentRoot, findCommentElements } from "./dom-utils";
 import type { PendingComment } from "./comment-extractor";
 import { extractComment } from "./comment-extractor";
 import { injectManualBlacklistButton } from "./manual-blacklist";
+import { log } from "./debug";
 import { foldEl, hideEl } from "./fold-ui";
 import { ruozhiStats, saveStats, notifyStatsUpdate, resetStats } from "./stats";
 import { filterReplies } from "./filter";
@@ -15,7 +16,6 @@ import { fullPageDiagnostic, inspectShadowRoot } from "./diagnostics";
 import { isBlacklistedSync, getCacheSync, commentHash } from "./db";
 
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 // ── 内部状态 ──
 
@@ -34,7 +34,7 @@ function scanPage(): void {
   }
 
   const items = findCommentElements(root);
-  console.log(
+  log(
     TAG,
     `🔍 scanPage: 找到 ${items.length} 个评论元素, root=${root === document ? "document" : (root as Element).tagName || "shadowRoot"}`,
   );

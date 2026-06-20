@@ -126,7 +126,7 @@ export async function triggerReport(
   if (reasonCopied) showToast("✅ 已复制 AI 判定理由，请粘贴到举报框 (Cmd+V)");
 
   const renderer = findCommentRenderer(commentEl as HTMLElement);
-  console.log(
+  log(
     TAG,
     "🔍 评论容器:",
     renderer.tagName.toLowerCase(),
@@ -150,7 +150,7 @@ export async function triggerReport(
 
     const actionBar = deepFind(sr, "bili-comment-action-buttons-renderer");
     if (!actionBar || !(actionBar as HTMLElement).shadowRoot) {
-      console.warn(
+      warn(
         TAG,
         "⚠️ 未找到 action-buttons",
         "| 子元素:",

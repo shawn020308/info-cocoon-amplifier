@@ -2,6 +2,7 @@
 // comment-extractor.ts - 从 DOM 节点提取评论信息
 // ============================================================
 import { strHash } from "./dom-utils";
+import { warn } from "./debug";
 
 /** 等待批处理的评论 */
 export interface PendingComment {
@@ -199,7 +200,7 @@ export function extractComment(el: Element): PendingComment | null {
 
     return { el, rpid, mid, uname, message };
   } catch (e) {
-    console.warn("[ruozhi-filter]", "  ❌ extractComment 异常:", e);
+    warn("[ruozhi-filter]", "  ❌ extractComment 异常:", e);
     return null;
   }
 }

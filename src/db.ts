@@ -281,7 +281,7 @@ export async function initMemoryCache(): Promise<void> {
     }
 
     memoryCacheReady = true;
-    console.log(
+    log(
       "[ruozhi-filter]",
       `📋 内存缓存就绪: 黑名单=${blByMid.size}条, 缓存=${cacheByHash.size}条`,
     );

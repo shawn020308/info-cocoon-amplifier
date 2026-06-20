@@ -8,9 +8,9 @@ import type {
   AIBatchResult,
   ReplyContext,
 } from "./types";
+import { log, warn } from "./debug";
 
 const TAG = "[ruozhi-filter]";
-import { log, warn } from "./debug";
 
 function buildSystemPrompt(config: FilterConfig, ctx: ReplyContext): string {
   let ctxBlock = `视频标题：${ctx.videoTitle}`;
@@ -66,7 +66,7 @@ export async function batchJudge(
   const systemPrompt = buildSystemPrompt(config, ctx);
   const userMessage = buildUserMessage(config, replies);
 
-  console.log(
+  log(
     TAG,
     "📤 请求体:",
     JSON.stringify({
@@ -108,10 +108,7 @@ export async function batchJudge(
       }),
     });
 
-    console.log(
-      TAG,
-      `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`,
-    );
+    log(TAG, `📡 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
 
     if (!response.ok) {
       const errText = await response.text();
