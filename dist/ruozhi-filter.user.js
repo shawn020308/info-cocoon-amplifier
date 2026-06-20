@@ -972,7 +972,7 @@ ${ctxBlock}
       return ok;
     }
   }
-  function findElementByText(root, text) {
+  function findByText(root, text) {
     const walk = (node) => {
       var _a, _b;
       for (const child of node.children) {
@@ -1058,27 +1058,26 @@ ${ctxBlock}
         console.warn(TAG$5, "⚠️ 未找到「更多」按钮");
         return { opened: false, reasonCopied };
       }
-      console.log(TAG$5, "🔍 点击「更多」按钮...");
+      console.log(TAG$5, "🔍 点击「更多」...");
       moreBtn.click();
       const menuAppeared = await waitFor(() => {
         const m = actionSR.querySelector(
           "bili-comment-menu"
         );
         if (!m || !m.shadowRoot) return false;
-        const style = m.getAttribute("style") || "";
-        return style.includes("--bili-comment-menu-display:block");
+        return (m.getAttribute("style") || "").includes(
+          "--bili-comment-menu-display:block"
+        );
       }, 2e3);
       if (!menuAppeared) {
-        console.warn(
-          TAG$5,
-          "⚠️ 菜单未显示（未检测到 --bili-comment-menu-display:block）"
-        );
+        console.warn(TAG$5, "⚠️ 菜单未显示");
         return { opened: false, reasonCopied };
       }
-      console.log(TAG$5, "✅ 菜单已显示，查找「举报」...");
       const menuEl = actionSR.querySelector("bili-comment-menu");
-      const menuSR = menuEl.shadowRoot;
-      const reportLi = findElementByText(menuSR, "举报");
+      const reportLi = findByText(
+        menuEl.shadowRoot,
+        "举报"
+      );
       if (!reportLi) {
         console.warn(TAG$5, "⚠️ 菜单中未找到「举报」");
         return { opened: false, reasonCopied };
@@ -1094,25 +1093,69 @@ ${ctxBlock}
   }
   function waitAndFillReportForm(reason) {
     const start = Date.now();
-    const MAX_WAIT = 3e3;
+    const MAX_WAIT = 4e3;
+    let attempts = 0;
     const tryFill = () => {
-      const textareas = document.querySelectorAll(
-        "textarea[placeholder*='举报'], textarea[maxlength='200']"
-      );
-      for (const ta of textareas) {
-        if (ta.value.trim() === "") {
-          ta.value = reason.slice(0, 200);
-          ta.dispatchEvent(new Event("input", { bubbles: true }));
-          ta.dispatchEvent(new Event("change", { bubbles: true }));
-          console.log(TAG$5, "✅ 已自动填写举报理由");
-          return;
+      var _a;
+      attempts++;
+      const popup = document.querySelector("bili-comments-popup");
+      if (!popup) {
+        if (Date.now() - start < MAX_WAIT) {
+          setTimeout(tryFill, 200);
         }
+        return;
+      }
+      const form = popup.querySelector("bili-comment-report-form");
+      if (!form || !form.shadowRoot) {
+        if (Date.now() - start < MAX_WAIT) {
+          setTimeout(tryFill, 200);
+        }
+        return;
+      }
+      const formSR = form.shadowRoot;
+      if (attempts <= 2) {
+        const allOptions = formSR.querySelectorAll("#option");
+        for (const opt of allOptions) {
+          const nameEl = opt.querySelector("#option-name");
+          if (nameEl && ((_a = nameEl.innerText) == null ? void 0 : _a.includes("引战"))) {
+            const radio = opt.querySelector("bili-radio");
+            if (radio && radio.shadowRoot) {
+              const inputSpan = radio.shadowRoot.querySelector(
+                "#input"
+              );
+              if (inputSpan) {
+                inputSpan.click();
+                console.log(TAG$5, "✅ 已选中「引战、不友善言论」");
+                break;
+              }
+            }
+            const input = opt.querySelector(
+              'input[type="radio"][value="4"]'
+            );
+            if (input) {
+              input.click();
+              break;
+            }
+          }
+        }
+        setTimeout(tryFill, 300);
+        return;
+      }
+      const textarea = formSR.querySelector(
+        "textarea[maxlength='200']"
+      );
+      if (textarea) {
+        textarea.value = reason.slice(0, 200);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        textarea.dispatchEvent(new Event("change", { bubbles: true }));
+        console.log(TAG$5, "✅ 已自动填写举报理由");
+        return;
       }
       if (Date.now() - start < MAX_WAIT) {
         setTimeout(tryFill, 300);
       }
     };
-    setTimeout(tryFill, 500);
+    setTimeout(tryFill, 600);
   }
   async function copyReason(reason) {
     const ok = await copyToClipboard(reason);
