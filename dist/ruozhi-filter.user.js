@@ -1207,6 +1207,7 @@ ${ctxBlock}
   function foldEl(el, info, verdict, style = "classic") {
     var _a, _b, _c, _d, _e, _f;
     try {
+      if (el.style.display === "none") return false;
       const labelMap = {
         low: "⚠️ 轻微不适",
         medium: "🚫 违规言论",
@@ -1671,6 +1672,7 @@ ${ctxBlock}
     if (items.length === 0) return;
     let found = 0;
     items.forEach((el) => {
+      if (el.style.display === "none") return;
       const info = extractComment(el);
       if (!info) return;
       injectManualBlacklistButton(el, info);

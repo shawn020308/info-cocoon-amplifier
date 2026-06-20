@@ -16,6 +16,9 @@ export function foldEl(
   style: "classic" | "light" | "dim" = "classic",
 ): boolean {
   try {
+    // 防止重复折叠（元素已被隐藏说明已处理过）
+    if ((el as HTMLElement).style.display === "none") return false;
+
     const labelMap: Record<string, string> = {
       low: "⚠️ 轻微不适",
       medium: "🚫 违规言论",

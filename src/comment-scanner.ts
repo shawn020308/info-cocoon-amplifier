@@ -42,6 +42,9 @@ function scanPage(): void {
 
   let found = 0;
   items.forEach((el) => {
+    // 跳过已被折叠隐藏的评论（防止重复折叠叠加）
+    if ((el as HTMLElement).style.display === "none") return;
+
     const info = extractComment(el);
     if (!info) return;
 
