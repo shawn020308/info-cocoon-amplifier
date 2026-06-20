@@ -11,12 +11,16 @@ import {
   refreshConfig,
   setUpdateStats,
 } from "./interceptor";
-import { pruneCache, getBlacklistCount } from "./db";
+import { pruneCache, getBlacklistCount, initMemoryCache } from "./db";
 
 const TAG = "[ruozhi-filter]";
 
 async function main(): Promise<void> {
   console.log(TAG, "🚀 插件启动中...");
+
+  // ★ 优先加载内存缓存（黑名单 + 缓存），使后续扫描能瞬间判定
+  initMemoryCache().catch(() => {});
+
   let config: FilterConfig = loadConfig();
   if (!config.apiKey) {
     config = { ...DEFAULT_CONFIG };

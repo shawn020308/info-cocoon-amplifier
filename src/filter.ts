@@ -38,43 +38,51 @@ export async function filterReplies(
 
   if (replies.length === 0) return { violations, newBlacklistEntries };
 
-  // Step 1: 本地黑名单 + LRU缓存
+  // Step 1: 本地黑名单 + LRU缓存（并行执行，不再逐条 await）
   const needAICheck: BiliReply[] = [];
 
-  for (const reply of replies) {
-    if (config.enableBlacklist) {
-      const blRecord = await isBlacklisted(reply.mid, reply.member.uname);
-      if (blRecord) {
-        violations.set(reply.rpid, {
-          reason: `[黑名单] ${blRecord.reason}`,
-          severity: blRecord.severity,
-        });
-        if (stats) {
-          stats.totalFiltered++;
-          stats.severityCounts[blRecord.severity] =
-            (stats.severityCounts[blRecord.severity] ?? 0) + 1;
+  const preChecks = await Promise.all(
+    replies.map(async (reply) => {
+      if (config.enableBlacklist) {
+        const blRecord = await isBlacklisted(reply.mid, reply.member.uname);
+        if (blRecord) {
+          return {
+            reply,
+            hit: "blacklist" as const,
+            reason: `[黑名单] ${blRecord.reason}`,
+            severity: blRecord.severity,
+          };
         }
-        continue;
       }
-    }
 
-    const hash = commentHash(reply.content.message, reply.mid);
-    const cached = await getCache(hash);
-    if (cached && cached.violation) {
-      violations.set(reply.rpid, {
-        reason: `[缓存] ${cached.reason}`,
-        severity: cached.severity,
+      const hash = commentHash(reply.content.message, reply.mid);
+      const cached = await getCache(hash);
+      if (cached && cached.violation) {
+        return {
+          reply,
+          hit: "cache" as const,
+          reason: `[缓存] ${cached.reason}`,
+          severity: cached.severity,
+        };
+      }
+
+      return { reply, hit: null as null };
+    }),
+  );
+
+  for (const result of preChecks) {
+    if (result.hit) {
+      violations.set(result.reply.rpid, {
+        reason: result.reason,
+        severity: result.severity,
       });
       if (stats) {
         stats.totalFiltered++;
-        stats.severityCounts[cached.severity] =
-          (stats.severityCounts[cached.severity] ?? 0) + 1;
+        stats.severityCounts[result.severity] =
+          (stats.severityCounts[result.severity] ?? 0) + 1;
       }
-      continue;
-    }
-
-    if (config.enableAI) {
-      needAICheck.push(reply);
+    } else if (config.enableAI) {
+      needAICheck.push(result.reply);
     }
   }
 
