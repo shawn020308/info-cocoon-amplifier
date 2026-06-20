@@ -28,6 +28,14 @@ export function loadConfig(): FilterConfig {
       if (typeof parsed.foldMode === "boolean") {
         parsed.foldMode = parsed.foldMode ? "classic" : "none";
       }
+      // 迁移：将旧的 filterDimensions 合并到 prompt
+      if (parsed.filterDimensions) {
+        parsed.prompt =
+          (parsed.prompt || "") +
+          "\n\n违规判定维度：\n" +
+          parsed.filterDimensions;
+        delete parsed.filterDimensions;
+      }
       return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch {
@@ -199,14 +207,9 @@ function buildPanelHTML(config: FilterConfig): string {
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
     <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt</label>
-      <textarea id="ruozhi-prompt" rows="3"
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt（含违规判定维度）</label>
+      <textarea id="ruozhi-prompt" rows="8"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">${escapeHtml(config.prompt)}</textarea>
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🎯 违规判定维度</label>
-      <textarea id="ruozhi-dimensions" rows="5"
-        style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace">${escapeHtml(config.filterDimensions)}</textarea>
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -388,9 +391,6 @@ function bindPanelEvents(
       sendVideoDesc:
         (root.querySelector("#ruozhi-send-videodesc") as HTMLInputElement)
           ?.checked ?? false,
-      filterDimensions:
-        (root.querySelector("#ruozhi-dimensions") as HTMLTextAreaElement)
-          ?.value ?? config.filterDimensions,
     };
     saveConfig(newConfig);
     onConfigChange(newConfig);

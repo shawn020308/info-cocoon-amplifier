@@ -25,6 +25,14 @@ export function getConfig(): FilterConfig {
       if (parsed.devMode === undefined) {
         parsed.devMode = false;
       }
+      // 迁移：将旧的 filterDimensions 合并到 prompt
+      if (parsed.filterDimensions) {
+        parsed.prompt =
+          (parsed.prompt || "") +
+          "\n\n违规判定维度：\n" +
+          parsed.filterDimensions;
+        delete parsed.filterDimensions;
+      }
       setDevMode(parsed.devMode);
       _config = parsed;
       return parsed;
@@ -47,11 +55,6 @@ export function getConfig(): FilterConfig {
     sendUname: false,
     sendMid: false,
     sendVideoDesc: false,
-    filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
-- **人身攻击**：针对个人的侮辱、谩骂、诅咒
-- **引战/煽动**：故意挑起争端，使用极端化言论
-- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`,
   };
 }
 

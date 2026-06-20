@@ -72,8 +72,6 @@ export interface FilterConfig {
   sendMid: boolean;
   /** 发送请求时附带视频简介 */
   sendVideoDesc: boolean;
-  /** 自定义违规判定维度 */
-  filterDimensions: string;
 }
 
 /** AI判定结果: 单条评论的违规判定 */
@@ -145,8 +143,15 @@ export const DEFAULT_CONFIG: FilterConfig = {
   apiKey: "",
   apiEndpoint: "https://api.deepseek.com/chat/completions",
   model: "deepseek-chat",
-  prompt:
-    "请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。",
+  prompt: `请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。
+
+违规判定维度：
+- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
+- **人身攻击**：针对个人的侮辱、谩骂、诅咒
+- **引战/煽动**：故意挑起争端，使用极端化言论
+- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
+- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
   foldMode: "classic",
   enableAI: true,
   enableBlacklist: true,
@@ -157,10 +162,4 @@ export const DEFAULT_CONFIG: FilterConfig = {
   sendUname: false,
   sendMid: false,
   sendVideoDesc: false,
-  filterDimensions: `- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
-- **人身攻击**：针对个人的侮辱、谩骂、诅咒
-- **引战/煽动**：故意挑起争端，使用极端化言论
-- **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
-- **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
-- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
 };

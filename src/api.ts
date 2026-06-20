@@ -20,8 +20,6 @@ function buildSystemPrompt(config: FilterConfig, ctx: ReplyContext): string {
 
   return `判断评论是否违规。
 规则：${config.prompt}
-维度：
-${config.filterDimensions}
 上下文：${ctxParts.join("；")}
 
 仅输出JSON（无markdown标记）：
