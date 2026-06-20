@@ -18,6 +18,7 @@ import {
 import { batchJudge } from "./api";
 
 const TAG = "[ruozhi-filter]";
+import { log, warn } from "./debug";
 
 export interface FilterResult {
   violations: Map<number, { reason: string; severity: AIVerdict["severity"] }>;
@@ -126,7 +127,7 @@ export async function filterReplies(
 
           // block 或 high 级别自动拉黑
           if ((v.severity === "block" || v.severity === "high") && reply) {
-            console.log(TAG, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
+            log(TAG, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
             await addToBlacklist({
               mid: v.mid,
               uname: reply.member.uname,
@@ -147,7 +148,7 @@ export async function filterReplies(
       console.error(TAG, "❌ AI判定失败:", err);
     }
   } else if (needAICheck.length > 0 && !config.apiKey) {
-    console.warn(TAG, "⚠️ 未配置 API Key，跳过 AI 判定");
+    warn(TAG, "⚠️ 未配置 API Key，跳过 AI 判定");
   }
 
   if (stats) stats.lastUpdate = Date.now();

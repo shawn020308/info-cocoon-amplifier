@@ -2,6 +2,7 @@
 // config.ts - 配置管理和上下文状态
 // ============================================================
 import type { FilterConfig, ReplyContext } from "./types";
+import { setDevMode } from "./debug";
 
 /** 缓存的配置，null 表示需要从 GM 存储加载 */
 let _config: FilterConfig | null = null;
@@ -17,10 +18,14 @@ export function getConfig(): FilterConfig {
       if (typeof parsed.foldMode === "boolean") {
         parsed.foldMode = parsed.foldMode ? "classic" : "none";
       }
-      // 兼容旧版配置：没有 blacklistConfirm 时默认 true
+      // 兼容旧版配置
       if (parsed.blacklistConfirm === undefined) {
         parsed.blacklistConfirm = true;
       }
+      if (parsed.devMode === undefined) {
+        parsed.devMode = false;
+      }
+      setDevMode(parsed.devMode);
       _config = parsed;
       return parsed;
     }
@@ -36,6 +41,7 @@ export function getConfig(): FilterConfig {
     enableAI: true,
     enableBlacklist: true,
     blacklistConfirm: true,
+    devMode: false,
     blacklistStrictness: 1,
     pricePerMToken: 1.1,
     sendUname: false,
@@ -52,6 +58,7 @@ export function getConfig(): FilterConfig {
 /** 从外部注入新配置（UI保存时调用） */
 export function refreshConfig(cfg: FilterConfig): void {
   _config = cfg;
+  setDevMode(cfg.devMode);
 }
 
 /** 当前视频上下文 */

@@ -25,7 +25,6 @@ export function loadConfig(): FilterConfig {
     const raw = GM_getValue("ruozhi-config", "");
     if (raw) {
       const parsed = JSON.parse(raw);
-      // 兼容旧版 boolean foldMode
       if (typeof parsed.foldMode === "boolean") {
         parsed.foldMode = parsed.foldMode ? "classic" : "none";
       }
@@ -37,12 +36,10 @@ export function loadConfig(): FilterConfig {
   return { ...DEFAULT_CONFIG };
 }
 
-/** 保存配置到 GM storage */
 export function saveConfig(config: FilterConfig): void {
   GM_setValue("ruozhi-config", JSON.stringify(config));
 }
 
-/** 设置统计引用（由 main.ts 调用） */
 export function setStatsRef(stats: AccumulatedStats): void {
   currentStats = stats;
   updateFabBadge();
@@ -57,7 +54,6 @@ function updateFabBadge(): void {
   }
 }
 
-/** 主入口: 注入UI */
 export function injectUI(
   config: FilterConfig,
   onConfigChange: (cfg: FilterConfig) => void,
@@ -65,7 +61,6 @@ export function injectUI(
   injectFloatingButton(config, onConfigChange);
 }
 
-/** 悬浮触发按钮 */
 function injectFloatingButton(
   config: FilterConfig,
   onConfigChange: (cfg: FilterConfig) => void,
@@ -83,7 +78,6 @@ function injectFloatingButton(
     gap: "4px",
   });
 
-  // 统计badge
   const badge = document.createElement("div");
   badge.id = "ruozhi-fab-badge";
   badge.textContent = "0";
@@ -136,7 +130,6 @@ function injectFloatingButton(
   document.body.appendChild(container);
 }
 
-/** 开关设置面板 */
 function toggleSettingsPanel(
   config: FilterConfig,
   onConfigChange: (cfg: FilterConfig) => void,
@@ -146,17 +139,14 @@ function toggleSettingsPanel(
     panelVisible = false;
     return;
   }
-
   if (!panelRoot) {
     panelRoot = buildSettingsPanel(config, onConfigChange);
     document.body.appendChild(panelRoot);
   }
-
   panelRoot.style.display = "block";
   panelVisible = true;
 }
 
-/** 构建设置面板DOM */
 function buildSettingsPanel(
   config: FilterConfig,
   onConfigChange: (cfg: FilterConfig) => void,
@@ -177,67 +167,53 @@ function buildSettingsPanel(
     overflow: "hidden",
     fontFamily: "system-ui, -apple-system, sans-serif",
   });
-
   root.innerHTML = buildPanelHTML(config);
   document.body.appendChild(root);
-
-  // 事件绑定
   bindPanelEvents(root, config, onConfigChange);
-
   return root;
 }
 
-/** 面板HTML */
 function buildPanelHTML(config: FilterConfig): string {
   return `
 <div style="display:flex;flex-direction:column;max-height:600px">
-  <!-- Header -->
   <div style="padding:16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:12px 12px 0 0">
     <div style="font-size:16px;font-weight:700">🧠 信息茧房放大器</div>
     <div style="font-size:12px;opacity:0.8;margin-top:4px">AI驱动的降智言论过滤器</div>
   </div>
 
-  <!-- Tab切换 -->
   <div id="ruozhi-tabs" style="display:flex;border-bottom:1px solid #eee">
     <button class="ruozhi-tab active" data-tab="settings" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#667eea;border-bottom:2px solid #667eea">⚙️ 设置</button>
     <button class="ruozhi-tab" data-tab="stats" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📊 统计</button>
     <button class="ruozhi-tab" data-tab="blacklist" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📋 黑名单</button>
   </div>
 
-  <!-- Settings Tab -->
   <div id="ruozhi-tab-settings" style="overflow-y:auto;flex:1;padding:12px 16px">
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🔑 DeepSeek API Key</label>
-      <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}"
-        placeholder="sk-xxxxxxxx"
+      <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}" placeholder="sk-xxxxxxxx"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🌐 API 地址</label>
       <input id="ruozhi-endpoint" type="text" value="${escapeAttr(config.apiEndpoint)}"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt</label>
       <textarea id="ruozhi-prompt" rows="3"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">${escapeHtml(config.prompt)}</textarea>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🎯 违规判定维度</label>
       <textarea id="ruozhi-dimensions" rows="5"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace">${escapeHtml(config.filterDimensions)}</textarea>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-enable-ai" type="checkbox" ${config.enableAI ? "checked" : ""}>
         启用 AI 过滤
       </label>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">👁️ 折叠样式</label>
       <select id="ruozhi-fold-mode"
@@ -247,27 +223,23 @@ function buildPanelHTML(config: FilterConfig): string {
         <option value="none" ${config.foldMode === "none" ? "selected" : ""}>🚫 完全隐藏 — 直接移除评论</option>
       </select>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-enable-bl" type="checkbox" ${config.enableBlacklist ? "checked" : ""}>
         启用本地黑名单
       </label>
     </div>
-
     <div id="ruozhi-bl-confirm-row" style="margin-bottom:12px;margin-left:24px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-bl-confirm" type="checkbox" ${config.blacklistConfirm ? "checked" : ""}>
         拉黑时弹出确认框（关闭可直接拉黑）
       </label>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">💰 Token单价 (元/百万)</label>
       <input id="ruozhi-price" type="number" value="${config.pricePerMToken}" step="0.1" min="0"
         style="width:100px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">📦 请求内容控制（关闭可节省Token）</div>
     <div style="margin-bottom:8px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -287,7 +259,13 @@ function buildPanelHTML(config: FilterConfig): string {
         附带视频简介
       </label>
     </div>
-
+    <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">🛠️ 开发者</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="ruozhi-dev-mode" type="checkbox" ${config.devMode ? "checked" : ""}>
+        开发者模式（显示调试日志）
+      </label>
+    </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="ruozhi-save" style="flex:1;padding:10px;border:none;border-radius:8px;background:#667eea;color:#fff;font-size:14px;cursor:pointer;font-weight:600">💾 保存设置</button>
       <button id="ruozhi-test" style="padding:10px 16px;border:1px solid #667eea;border-radius:8px;background:#fff;color:#667eea;font-size:13px;cursor:pointer">🔌 测试连接</button>
@@ -299,14 +277,12 @@ function buildPanelHTML(config: FilterConfig): string {
     <div id="ruozhi-status" style="margin-top:8px;font-size:12px;color:#666;min-height:18px"></div>
   </div>
 
-  <!-- Stats Tab -->
   <div id="ruozhi-tab-stats" style="display:none;overflow-y:auto;flex:1;padding:12px 16px">
     <div id="ruozhi-stats-content" style="font-size:13px">
       <div style="text-align:center;color:#999;padding:20px">暂无统计数据，等待首次 API 调用...</div>
     </div>
   </div>
 
-  <!-- Blacklist Tab -->
   <div id="ruozhi-tab-blacklist" style="display:none;overflow-y:auto;flex:1;max-height:400px">
     <div id="ruozhi-blacklist-content" style="padding:8px 0">加载中...</div>
   </div>
@@ -325,13 +301,11 @@ function escapeHtml(s: string): string {
   return div.innerHTML;
 }
 
-/** 绑定面板事件 */
 function bindPanelEvents(
   root: HTMLElement,
   config: FilterConfig,
   onConfigChange: (cfg: FilterConfig) => void,
 ): void {
-  // Tab 切换
   const tabs = root.querySelectorAll(".ruozhi-tab");
   tabs.forEach((tab) => {
     tab.addEventListener("click", async () => {
@@ -363,7 +337,6 @@ function bindPanelEvents(
         settingsEl.style.display = "none";
         statsEl.style.display = "none";
         blEl.style.display = "block";
-        // 加载黑名单
         const contentEl = root.querySelector("#ruozhi-blacklist-content");
         if (contentEl) {
           contentEl.innerHTML = await buildBlacklistPanelHTML();
@@ -373,7 +346,6 @@ function bindPanelEvents(
     });
   });
 
-  // 保存按钮
   root.querySelector("#ruozhi-save")?.addEventListener("click", () => {
     const newConfig: FilterConfig = {
       ...config,
@@ -397,6 +369,9 @@ function bindPanelEvents(
       blacklistConfirm:
         (root.querySelector("#ruozhi-bl-confirm") as HTMLInputElement)
           ?.checked ?? true,
+      devMode:
+        (root.querySelector("#ruozhi-dev-mode") as HTMLInputElement)?.checked ??
+        false,
       pricePerMToken:
         parseFloat(
           (root.querySelector("#ruozhi-price") as HTMLInputElement)?.value ||
@@ -420,7 +395,6 @@ function bindPanelEvents(
     showStatus(root, "✅ 设置已保存", "#28a745");
   });
 
-  // enableBlacklist 联动 blacklistConfirm 行显隐
   root.querySelector("#ruozhi-enable-bl")?.addEventListener("change", () => {
     const checked = (
       root.querySelector("#ruozhi-enable-bl") as HTMLInputElement
@@ -431,7 +405,6 @@ function bindPanelEvents(
     if (confirmRow) confirmRow.style.display = checked ? "" : "none";
   });
 
-  // 测试连接
   root.querySelector("#ruozhi-test")?.addEventListener("click", async () => {
     const apiKey = (root.querySelector("#ruozhi-apikey") as HTMLInputElement)
       ?.value;
@@ -448,7 +421,6 @@ function bindPanelEvents(
     );
   });
 
-  // 清除缓存
   root
     .querySelector("#ruozhi-clear-cache")
     ?.addEventListener("click", async () => {
@@ -456,22 +428,18 @@ function bindPanelEvents(
       showStatus(root, "✅ 缓存已清除", "#28a745");
     });
 
-  // 清空黑名单
   root
     .querySelector("#ruozhi-clear-bl")
     ?.addEventListener("click", async () => {
       if (!confirm("确定要清空所有黑名单记录吗？此操作不可撤销。")) return;
       await clearBlacklist();
       showStatus(root, "✅ 黑名单已清空", "#28a745");
-      // 刷新黑名单tab
       const blContent = root.querySelector("#ruozhi-blacklist-content");
-      if (blContent) {
+      if (blContent)
         blContent.innerHTML =
           '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
-      }
     });
 
-  // 重置统计 (动态渲染，用事件委托)
   root.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
     if (!target.closest("#ruozhi-clear-stats")) return;
@@ -489,14 +457,11 @@ function showStatus(root: HTMLElement, msg: string, color: string): void {
   }
 }
 
-/** 更新统计面板内容 */
 function updateStatsPanel(): void {
   const contentEl = document.querySelector("#ruozhi-stats-content");
   if (!contentEl || !currentStats) return;
-
   const s = currentStats;
   const tokensPerK = (s.totalTokens / 1000).toFixed(1);
-  // 读取用户自定义价格
   let price = 1.1;
   try {
     const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
@@ -505,7 +470,6 @@ function updateStatsPanel(): void {
     /* */
   }
   const costEst = ((s.totalTokens / 1000000) * price).toFixed(4);
-
   let sevHTML = "";
   const labels: Record<string, string> = {
     low: "⚠️ 轻微",
@@ -515,51 +479,24 @@ function updateStatsPanel(): void {
   };
   for (const [sev, count] of Object.entries(s.severityCounts).sort()) {
     const label = labels[sev] ?? sev;
-    sevHTML += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0">
-      <span>${label}</span><strong>${count}</strong></div>`;
+    sevHTML += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0"><span>${label}</span><strong>${count}</strong></div>`;
   }
-
   contentEl.innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:8px;color:#333">📈 累计统计</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div>
-          <div style="font-size:11px;color:#999">已扫描</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div>
-          <div style="font-size:11px;color:#999">已过滤</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#764ba2">${s.apiCalls}</div>
-          <div style="font-size:11px;color:#999">API 调用</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#e6a23c">${tokensPerK}K</div>
-          <div style="font-size:11px;color:#999">Token</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div>
-          <div style="font-size:11px;color:#999">预估费用</div>
-        </div>
-        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats">
-          <div style="font-size:16px;color:#f56c6c">🗑️</div>
-          <div style="font-size:11px;color:#f56c6c">重置统计</div>
-        </div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div><div style="font-size:11px;color:#999">已扫描</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div><div style="font-size:11px;color:#999">已过滤</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#764ba2">${s.apiCalls}</div><div style="font-size:11px;color:#999">API 调用</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#e6a23c">${tokensPerK}K</div><div style="font-size:11px;color:#999">Token</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div><div style="font-size:11px;color:#999">预估费用</div></div>
+        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats"><div style="font-size:16px;color:#f56c6c">🗑️</div><div style="font-size:11px;color:#f56c6c">重置统计</div></div>
       </div>
     </div>
-    <div style="margin-top:12px">
-      <div style="font-weight:600;margin-bottom:8px;color:#333">🏷️ 违规分布</div>
-      ${sevHTML || '<div style="color:#999;text-align:center;padding:8px">暂无</div>'}
-    </div>
-    <div style="margin-top:12px;font-size:11px;color:#aaa;text-align:center">
-      DeepSeek-chat ¥${price}/1M tokens · prompt: ${(s.promptTokens / 1000).toFixed(1)}K · completion: ${(s.completionTokens / 1000).toFixed(1)}K
-    </div>
-  `;
+    <div style="margin-top:12px"><div style="font-weight:600;margin-bottom:8px;color:#333">🏷️ 违规分布</div>${sevHTML || '<div style="color:#999;text-align:center;padding:8px">暂无</div>'}</div>
+    <div style="margin-top:12px;font-size:11px;color:#aaa;text-align:center">DeepSeek-chat ¥${price}/1M tokens · prompt: ${(s.promptTokens / 1000).toFixed(1)}K · completion: ${(s.completionTokens / 1000).toFixed(1)}K</div>`;
 }
 
-/** 绑定黑名单列表中的移除按钮事件 */
 function bindBlacklistEvents(container: Element): void {
   container.querySelectorAll(".ruozhi-remove-bl").forEach((btn) => {
     btn.addEventListener("click", async () => {

@@ -15,6 +15,7 @@ import { fullPageDiagnostic, inspectShadowRoot } from "./diagnostics";
 import { isBlacklistedSync, getCacheSync, commentHash } from "./db";
 
 const TAG = "[ruozhi-filter]";
+import { log, warn } from "./debug";
 
 // ── 内部状态 ──
 
@@ -28,7 +29,7 @@ let isFlushing = false;
 function scanPage(): void {
   const root = getCommentRoot();
   if (!root) {
-    console.log(TAG, "🔍 scanPage: 未找到评论区根节点");
+    log(TAG, "🔍 scanPage: 未找到评论区根节点");
     return;
   }
 
@@ -125,7 +126,7 @@ async function flushBatch(): Promise<void> {
 
   const batch = pendingBatch.splice(0);
 
-  console.log(TAG, `🚀 AI判定: ${batch.length} 条评论`);
+  log(TAG, `🚀 AI判定: ${batch.length} 条评论`);
 
   const config = getConfig();
   if (!currentContext.videoTitle) extractVideoInfo();
@@ -155,7 +156,7 @@ async function flushBatch(): Promise<void> {
     ruozhiStats.totalScanned += batch.length;
 
     if (result.violations.size > 0) {
-      console.log(TAG, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
+      log(TAG, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
       let cleaned = 0;
       for (const [rpid, v] of result.violations) {
         const p = batch.find((x) => x.rpid === rpid);
@@ -214,7 +215,7 @@ function watchNewComments(): void {
     childList: true,
     subtree: true,
   });
-  console.log(TAG, "👁️ MutationObserver 已绑定到评论根节点");
+  log(TAG, "👁️ MutationObserver 已绑定到评论根节点");
 
   // 绑定后立即扫描一次（评论可能已存在但 observer 尚未触发）
   scanPage();

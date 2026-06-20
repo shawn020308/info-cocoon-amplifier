@@ -24,6 +24,7 @@
     enableAI: true,
     enableBlacklist: true,
     blacklistConfirm: true,
+    devMode: false,
     blacklistStrictness: 1,
     pricePerMToken: 1.1,
     sendUname: false,
@@ -35,6 +36,16 @@
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
 - **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论`
   };
+  let _devMode = false;
+  function setDevMode(v) {
+    _devMode = v;
+  }
+  function log(tag, ...args) {
+    if (_devMode) console.log(tag, ...args);
+  }
+  function warn(tag, ...args) {
+    if (_devMode) console.warn(tag, ...args);
+  }
   const TAG$6 = "[ruozhi-filter]";
   function buildSystemPrompt(config, ctx) {
     let ctxBlock = `视频标题：${ctx.videoTitle}`;
@@ -126,7 +137,7 @@ ${ctxBlock}
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
       if (!content) {
-        console.warn(TAG$6, "⚠️ AI 返回空内容");
+        warn(TAG$6, "⚠️ AI 返回空内容");
         return { verdicts: [], usage };
       }
       try {
@@ -696,6 +707,10 @@ ${ctxBlock}
         if (parsed.blacklistConfirm === void 0) {
           parsed.blacklistConfirm = true;
         }
+        if (parsed.devMode === void 0) {
+          parsed.devMode = false;
+        }
+        setDevMode(parsed.devMode);
         _config = parsed;
         return parsed;
       }
@@ -710,6 +725,7 @@ ${ctxBlock}
       enableAI: true,
       enableBlacklist: true,
       blacklistConfirm: true,
+      devMode: false,
       blacklistStrictness: 1,
       pricePerMToken: 1.1,
       sendUname: false,
@@ -724,6 +740,7 @@ ${ctxBlock}
   }
   function refreshConfig(cfg) {
     _config = cfg;
+    setDevMode(cfg.devMode);
   }
   const currentContext = {
     oid: 0,
@@ -1072,7 +1089,7 @@ ${ctxBlock}
     try {
       const sr = renderer.shadowRoot;
       if (!sr) {
-        console.warn(TAG$5, "⚠️ 无 shadowRoot:", renderer.tagName);
+        warn(TAG$5, "⚠️ 无 shadowRoot:", renderer.tagName);
         return { opened: false, reasonCopied };
       }
       const actionBar = deepFind(sr, "bili-comment-action-buttons-renderer");
@@ -1090,10 +1107,10 @@ ${ctxBlock}
         "#more button"
       );
       if (!moreBtn) {
-        console.warn(TAG$5, "⚠️ 未找到「更多」按钮");
+        warn(TAG$5, "⚠️ 未找到「更多」按钮");
         return { opened: false, reasonCopied };
       }
-      console.log(TAG$5, "🔍 点击「更多」...");
+      log(TAG$5, "🔍 点击「更多」...");
       moreBtn.click();
       const ok = await waitFor(() => {
         const m = actionSR.querySelector(
@@ -1104,7 +1121,7 @@ ${ctxBlock}
         ));
       }, 2e3);
       if (!ok) {
-        console.warn(TAG$5, "⚠️ 菜单未显示");
+        warn(TAG$5, "⚠️ 菜单未显示");
         return { opened: false, reasonCopied };
       }
       const menuEl = actionSR.querySelector("bili-comment-menu");
@@ -1113,13 +1130,13 @@ ${ctxBlock}
         "举报"
       );
       if (!reportLi) {
-        console.warn(TAG$5, "⚠️ 菜单中未找到「举报」");
+        warn(TAG$5, "⚠️ 菜单中未找到「举报」");
         return { opened: false, reasonCopied };
       }
-      console.log(TAG$5, "🔍 点击「举报」...");
+      log(TAG$5, "🔍 点击「举报」...");
       reportLi.click();
       waitAndFillReportForm(reason);
-      console.log(TAG$5, "✅ 已触发原生举报");
+      log(TAG$5, "✅ 已触发原生举报");
       return { opened: true, reasonCopied };
     } finally {
       renderer.style.display = prevDisplay;
@@ -1153,7 +1170,7 @@ ${ctxBlock}
               );
               if (sp) {
                 sp.click();
-                console.log(TAG$5, "✅ 已选中「引战、不友善言论」");
+                log(TAG$5, "✅ 已选中「引战、不友善言论」");
                 break;
               }
             }
@@ -1176,7 +1193,7 @@ ${ctxBlock}
         ta.value = reason.slice(0, 200);
         ta.dispatchEvent(new Event("input", { bubbles: true }));
         ta.dispatchEvent(new Event("change", { bubbles: true }));
-        console.log(TAG$5, "✅ 已自动填写举报理由");
+        log(TAG$5, "✅ 已自动填写举报理由");
         return;
       }
       if (Date.now() - s < 4e3) setTimeout(f, 300);
@@ -1334,7 +1351,7 @@ ${ctxBlock}
           severity: "block",
           source: "manual"
         });
-        console.log(TAG$4, `🚫 手动拉黑: ${info.uname}`);
+        log(TAG$4, `🚫 手动拉黑: ${info.uname}`);
         if (config.foldMode === "none") {
           hideEl(el);
         } else {
@@ -1430,7 +1447,7 @@ ${ctxBlock}
               stats.severityCounts[v.severity] = (stats.severityCounts[v.severity] ?? 0) + 1;
             }
             if ((v.severity === "block" || v.severity === "high") && reply) {
-              console.log(TAG$3, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
+              log(TAG$3, `🚫 自动拉黑: uid=${v.mid} ${reply.member.uname}`);
               await addToBlacklist({
                 mid: v.mid,
                 uname: reply.member.uname,
@@ -1451,7 +1468,7 @@ ${ctxBlock}
         console.error(TAG$3, "❌ AI判定失败:", err);
       }
     } else if (needAICheck.length > 0 && !config.apiKey) {
-      console.warn(TAG$3, "⚠️ 未配置 API Key，跳过 AI 判定");
+      warn(TAG$3, "⚠️ 未配置 API Key，跳过 AI 判定");
     }
     if (stats) stats.lastUpdate = Date.now();
     return { violations, newBlacklistEntries };
@@ -1459,7 +1476,7 @@ ${ctxBlock}
   const TAG$2 = "[ruozhi-filter]";
   function fullPageDiagnostic() {
     var _a, _b;
-    console.log(TAG$2, "══════ 诊断 ══════");
+    log(TAG$2, "══════ 诊断 ══════");
     const bc = document.querySelector("bili-comments");
     console.log(
       TAG$2,
@@ -1491,7 +1508,7 @@ ${ctxBlock}
     if (bc && bc.shadowRoot) {
       const sr = bc.shadowRoot;
       const allNodes = sr.querySelectorAll("*");
-      console.log(TAG$2, `🔬 ShadowRoot 总节点: ${allNodes.length}`);
+      log(TAG$2, `🔬 ShadowRoot 总节点: ${allNodes.length}`);
       const tagCounts = /* @__PURE__ */ new Map();
       allNodes.forEach((n) => {
         const t = n.tagName.toLowerCase();
@@ -1511,9 +1528,9 @@ ${ctxBlock}
       ];
       for (const sel of itemChecks) {
         const count = sr.querySelectorAll(sel).length;
-        console.log(TAG$2, `  🎯 "${sel}" → ${count}个`);
+        log(TAG$2, `  🎯 "${sel}" → ${count}个`);
       }
-      console.log(TAG$2, "📋 ShadowRoot 直接子元素:");
+      log(TAG$2, "📋 ShadowRoot 直接子元素:");
       for (const child of sr.children) {
         const tag = child.tagName.toLowerCase();
         const id = child.id ? `#${child.id}` : "";
@@ -1547,23 +1564,23 @@ ${ctxBlock}
       ".video-data",
       "section"
     ];
-    console.log(TAG$2, "📐 页面结构:");
+    log(TAG$2, "📐 页面结构:");
     for (const sel of mainSections) {
       const els = document.querySelectorAll(sel);
-      if (els.length > 0) console.log(TAG$2, `  ${sel}: ${els.length}个`);
+      if (els.length > 0) log(TAG$2, `  ${sel}: ${els.length}个`);
     }
-    console.log(TAG$2, "══════ 完成 ══════");
+    log(TAG$2, "══════ 完成 ══════");
   }
   function inspectShadowRoot() {
     const bc = document.querySelector("bili-comments");
     if (!bc || !bc.shadowRoot) {
-      console.log(TAG$2, "❌ bili-comments 或其 shadowRoot 未找到");
+      log(TAG$2, "❌ bili-comments 或其 shadowRoot 未找到");
       return;
     }
     const sr = bc.shadowRoot;
-    console.log(TAG$2, "══════ ShadowRoot 完整探查 ══════");
-    console.log(TAG$2, `总节点数: ${sr.querySelectorAll("*").length}`);
-    console.log(TAG$2, `直接子元素数: ${sr.children.length}`);
+    log(TAG$2, "══════ ShadowRoot 完整探查 ══════");
+    log(TAG$2, `总节点数: ${sr.querySelectorAll("*").length}`);
+    log(TAG$2, `直接子元素数: ${sr.children.length}`);
     function dump(el, depth = 0) {
       var _a, _b;
       if (depth > 4) return;
@@ -1573,11 +1590,11 @@ ${ctxBlock}
       const cls = el.className ? "." + el.className.split(" ").slice(0, 3).join(".") : "";
       const attrs = el instanceof HTMLElement ? el.getAttributeNames().filter((a) => a !== "class" && a !== "id").map((a) => `${a}="${el.getAttribute(a)}"`.slice(0, 60)).join(" ") : "";
       const text = ((_b = (_a = el.innerText) == null ? void 0 : _a.slice(0, 80)) == null ? void 0 : _b.replace(/\n/g, " ")) ?? "";
-      console.log(TAG$2, `${indent}<${tag}${id}${cls}> ${attrs} "${text}"`);
+      log(TAG$2, `${indent}<${tag}${id}${cls}> ${attrs} "${text}"`);
       if (el.children.length <= 4) {
         for (const c of el.children) dump(c, depth + 1);
       } else if (depth < 3) {
-        console.log(TAG$2, `${indent}  ... ${el.children.length}个子元素，取前4个`);
+        log(TAG$2, `${indent}  ... ${el.children.length}个子元素，取前4个`);
         for (let i = 0; i < Math.min(4, el.children.length); i++) {
           dump(el.children[i], depth + 1);
         }
@@ -1586,7 +1603,7 @@ ${ctxBlock}
     for (const child of sr.children) {
       dump(child, 0);
     }
-    console.log(TAG$2, "══════ 探查完成 ══════");
+    log(TAG$2, "══════ 探查完成 ══════");
   }
   const TAG$1 = "[ruozhi-filter]";
   let pendingBatch = [];
@@ -1596,7 +1613,7 @@ ${ctxBlock}
   function scanPage() {
     const root = getCommentRoot();
     if (!root) {
-      console.log(TAG$1, "🔍 scanPage: 未找到评论区根节点");
+      log(TAG$1, "🔍 scanPage: 未找到评论区根节点");
       return;
     }
     const items = findCommentElements(root);
@@ -1672,7 +1689,7 @@ ${ctxBlock}
     if (pendingBatch.length === 0 || isFlushing) return;
     isFlushing = true;
     const batch = pendingBatch.splice(0);
-    console.log(TAG$1, `🚀 AI判定: ${batch.length} 条评论`);
+    log(TAG$1, `🚀 AI判定: ${batch.length} 条评论`);
     const config = getConfig();
     if (!currentContext.videoTitle) extractVideoInfo();
     const replies = batch.map((p) => ({
@@ -1697,7 +1714,7 @@ ${ctxBlock}
       );
       ruozhiStats.totalScanned += batch.length;
       if (result.violations.size > 0) {
-        console.log(TAG$1, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
+        log(TAG$1, `🛡️ ${result.violations.size}/${batch.length} 条违规`);
         let cleaned = 0;
         for (const [rpid, v] of result.violations) {
           const p = batch.find((x) => x.rpid === rpid);
@@ -1740,7 +1757,7 @@ ${ctxBlock}
       childList: true,
       subtree: true
     });
-    console.log(TAG$1, "👁️ MutationObserver 已绑定到评论根节点");
+    log(TAG$1, "👁️ MutationObserver 已绑定到评论根节点");
     scanPage();
   }
   function watchScrollLoading() {
@@ -1913,53 +1930,44 @@ ${ctxBlock}
   function buildPanelHTML(config) {
     return `
 <div style="display:flex;flex-direction:column;max-height:600px">
-  <!-- Header -->
   <div style="padding:16px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:12px 12px 0 0">
     <div style="font-size:16px;font-weight:700">🧠 信息茧房放大器</div>
     <div style="font-size:12px;opacity:0.8;margin-top:4px">AI驱动的降智言论过滤器</div>
   </div>
 
-  <!-- Tab切换 -->
   <div id="ruozhi-tabs" style="display:flex;border-bottom:1px solid #eee">
     <button class="ruozhi-tab active" data-tab="settings" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#667eea;border-bottom:2px solid #667eea">⚙️ 设置</button>
     <button class="ruozhi-tab" data-tab="stats" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📊 统计</button>
     <button class="ruozhi-tab" data-tab="blacklist" style="flex:1;padding:10px;border:none;background:none;cursor:pointer;font-size:13px;color:#999">📋 黑名单</button>
   </div>
 
-  <!-- Settings Tab -->
   <div id="ruozhi-tab-settings" style="overflow-y:auto;flex:1;padding:12px 16px">
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🔑 DeepSeek API Key</label>
-      <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}"
-        placeholder="sk-xxxxxxxx"
+      <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}" placeholder="sk-xxxxxxxx"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🌐 API 地址</label>
       <input id="ruozhi-endpoint" type="text" value="${escapeAttr(config.apiEndpoint)}"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">📝 过滤规则 Prompt</label>
       <textarea id="ruozhi-prompt" rows="3"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box">${escapeHtml(config.prompt)}</textarea>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">🎯 违规判定维度</label>
       <textarea id="ruozhi-dimensions" rows="5"
         style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:monospace">${escapeHtml(config.filterDimensions)}</textarea>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-enable-ai" type="checkbox" ${config.enableAI ? "checked" : ""}>
         启用 AI 过滤
       </label>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">👁️ 折叠样式</label>
       <select id="ruozhi-fold-mode"
@@ -1969,27 +1977,23 @@ ${ctxBlock}
         <option value="none" ${config.foldMode === "none" ? "selected" : ""}>🚫 完全隐藏 — 直接移除评论</option>
       </select>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-enable-bl" type="checkbox" ${config.enableBlacklist ? "checked" : ""}>
         启用本地黑名单
       </label>
     </div>
-
     <div id="ruozhi-bl-confirm-row" style="margin-bottom:12px;margin-left:24px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
         <input id="ruozhi-bl-confirm" type="checkbox" ${config.blacklistConfirm ? "checked" : ""}>
         拉黑时弹出确认框（关闭可直接拉黑）
       </label>
     </div>
-
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">💰 Token单价 (元/百万)</label>
       <input id="ruozhi-price" type="number" value="${config.pricePerMToken}" step="0.1" min="0"
         style="width:100px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
     </div>
-
     <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">📦 请求内容控制（关闭可节省Token）</div>
     <div style="margin-bottom:8px">
       <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -2009,7 +2013,13 @@ ${ctxBlock}
         附带视频简介
       </label>
     </div>
-
+    <div style="margin-bottom:8px;font-size:12px;color:#999;font-weight:600">🛠️ 开发者</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input id="ruozhi-dev-mode" type="checkbox" ${config.devMode ? "checked" : ""}>
+        开发者模式（显示调试日志）
+      </label>
+    </div>
     <div style="display:flex;gap:8px;margin-top:16px">
       <button id="ruozhi-save" style="flex:1;padding:10px;border:none;border-radius:8px;background:#667eea;color:#fff;font-size:14px;cursor:pointer;font-weight:600">💾 保存设置</button>
       <button id="ruozhi-test" style="padding:10px 16px;border:1px solid #667eea;border-radius:8px;background:#fff;color:#667eea;font-size:13px;cursor:pointer">🔌 测试连接</button>
@@ -2021,14 +2031,12 @@ ${ctxBlock}
     <div id="ruozhi-status" style="margin-top:8px;font-size:12px;color:#666;min-height:18px"></div>
   </div>
 
-  <!-- Stats Tab -->
   <div id="ruozhi-tab-stats" style="display:none;overflow-y:auto;flex:1;padding:12px 16px">
     <div id="ruozhi-stats-content" style="font-size:13px">
       <div style="text-align:center;color:#999;padding:20px">暂无统计数据，等待首次 API 调用...</div>
     </div>
   </div>
 
-  <!-- Blacklist Tab -->
   <div id="ruozhi-tab-blacklist" style="display:none;overflow-y:auto;flex:1;max-height:400px">
     <div id="ruozhi-blacklist-content" style="padding:8px 0">加载中...</div>
   </div>
@@ -2082,7 +2090,7 @@ ${ctxBlock}
       });
     });
     (_a = root.querySelector("#ruozhi-save")) == null ? void 0 : _a.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l;
+      var _a2, _b2, _c2, _d2, _e2, _f, _g, _h, _i, _j, _k, _l, _m;
       const newConfig = {
         ...config,
         apiKey: ((_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value) ?? "",
@@ -2092,13 +2100,14 @@ ${ctxBlock}
         foldMode: ((_e2 = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _e2.value) ?? "classic",
         enableBlacklist: ((_f = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _f.checked) ?? true,
         blacklistConfirm: ((_g = root.querySelector("#ruozhi-bl-confirm")) == null ? void 0 : _g.checked) ?? true,
+        devMode: ((_h = root.querySelector("#ruozhi-dev-mode")) == null ? void 0 : _h.checked) ?? false,
         pricePerMToken: parseFloat(
-          ((_h = root.querySelector("#ruozhi-price")) == null ? void 0 : _h.value) || "1.1"
+          ((_i = root.querySelector("#ruozhi-price")) == null ? void 0 : _i.value) || "1.1"
         ) || 1.1,
-        sendUname: ((_i = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _i.checked) ?? false,
-        sendMid: ((_j = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _j.checked) ?? false,
-        sendVideoDesc: ((_k = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _k.checked) ?? false,
-        filterDimensions: ((_l = root.querySelector("#ruozhi-dimensions")) == null ? void 0 : _l.value) ?? config.filterDimensions
+        sendUname: ((_j = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _j.checked) ?? false,
+        sendMid: ((_k = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _k.checked) ?? false,
+        sendVideoDesc: ((_l = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _l.checked) ?? false,
+        filterDimensions: ((_m = root.querySelector("#ruozhi-dimensions")) == null ? void 0 : _m.value) ?? config.filterDimensions
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -2136,9 +2145,8 @@ ${ctxBlock}
       await clearBlacklist();
       showStatus(root, "✅ 黑名单已清空", "#28a745");
       const blContent = root.querySelector("#ruozhi-blacklist-content");
-      if (blContent) {
+      if (blContent)
         blContent.innerHTML = '<div style="padding:16px;text-align:center;color:#999">暂无黑名单记录，一片祥和 🎉</div>';
-      }
     });
     root.addEventListener("click", (e) => {
       const target = e.target;
@@ -2176,47 +2184,22 @@ ${ctxBlock}
     };
     for (const [sev, count] of Object.entries(s.severityCounts).sort()) {
       const label = labels[sev] ?? sev;
-      sevHTML += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0">
-      <span>${label}</span><strong>${count}</strong></div>`;
+      sevHTML += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0"><span>${label}</span><strong>${count}</strong></div>`;
     }
     contentEl.innerHTML = `
     <div style="margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:8px;color:#333">📈 累计统计</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div>
-          <div style="font-size:11px;color:#999">已扫描</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div>
-          <div style="font-size:11px;color:#999">已过滤</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#764ba2">${s.apiCalls}</div>
-          <div style="font-size:11px;color:#999">API 调用</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#e6a23c">${tokensPerK}K</div>
-          <div style="font-size:11px;color:#999">Token</div>
-        </div>
-        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div>
-          <div style="font-size:11px;color:#999">预估费用</div>
-        </div>
-        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats">
-          <div style="font-size:16px;color:#f56c6c">🗑️</div>
-          <div style="font-size:11px;color:#f56c6c">重置统计</div>
-        </div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#909399">${s.totalScanned}</div><div style="font-size:11px;color:#999">已扫描</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#667eea">${s.totalFiltered}</div><div style="font-size:11px;color:#999">已过滤</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#764ba2">${s.apiCalls}</div><div style="font-size:11px;color:#999">API 调用</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#e6a23c">${tokensPerK}K</div><div style="font-size:11px;color:#999">Token</div></div>
+        <div style="background:#f5f7fa;padding:8px;border-radius:6px;text-align:center"><div style="font-size:20px;font-weight:700;color:#67c23a">¥${costEst}</div><div style="font-size:11px;color:#999">预估费用</div></div>
+        <div style="background:#fef0f0;padding:8px;border-radius:6px;text-align:center;cursor:pointer" id="ruozhi-clear-stats"><div style="font-size:16px;color:#f56c6c">🗑️</div><div style="font-size:11px;color:#f56c6c">重置统计</div></div>
       </div>
     </div>
-    <div style="margin-top:12px">
-      <div style="font-weight:600;margin-bottom:8px;color:#333">🏷️ 违规分布</div>
-      ${sevHTML || '<div style="color:#999;text-align:center;padding:8px">暂无</div>'}
-    </div>
-    <div style="margin-top:12px;font-size:11px;color:#aaa;text-align:center">
-      DeepSeek-chat ¥${price}/1M tokens · prompt: ${(s.promptTokens / 1e3).toFixed(1)}K · completion: ${(s.completionTokens / 1e3).toFixed(1)}K
-    </div>
-  `;
+    <div style="margin-top:12px"><div style="font-weight:600;margin-bottom:8px;color:#333">🏷️ 违规分布</div>${sevHTML || '<div style="color:#999;text-align:center;padding:8px">暂无</div>'}</div>
+    <div style="margin-top:12px;font-size:11px;color:#aaa;text-align:center">DeepSeek-chat ¥${price}/1M tokens · prompt: ${(s.promptTokens / 1e3).toFixed(1)}K · completion: ${(s.completionTokens / 1e3).toFixed(1)}K</div>`;
   }
   function bindBlacklistEvents(container) {
     container.querySelectorAll(".ruozhi-remove-bl").forEach((btn) => {
@@ -2233,7 +2216,7 @@ ${ctxBlock}
   }
   const TAG = "[ruozhi-filter]";
   async function main() {
-    console.log(TAG, "🚀 插件启动中...");
+    log(TAG, "🚀 插件启动中...");
     initMemoryCache().catch(() => {
     });
     let config = loadConfig();

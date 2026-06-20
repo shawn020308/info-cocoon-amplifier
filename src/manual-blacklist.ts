@@ -7,6 +7,7 @@ import { addToBlacklist } from "./db";
 import { hideEl, foldEl } from "./fold-ui";
 
 const TAG = "[ruozhi-filter]";
+import { log, warn } from "./debug";
 
 /** 已注入拉黑按钮的元素集合（避免重复注入） */
 const blacklistButtonInjected = new WeakSet<Element>();
@@ -116,7 +117,7 @@ export function injectManualBlacklistButton(
         source: "manual",
       });
 
-      console.log(TAG, `🚫 手动拉黑: ${info.uname}`);
+      log(TAG, `🚫 手动拉黑: ${info.uname}`);
 
       if (config.foldMode === "none") {
         hideEl(el);

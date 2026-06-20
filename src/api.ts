@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 const TAG = "[ruozhi-filter]";
+import { log, warn } from "./debug";
 
 function buildSystemPrompt(config: FilterConfig, ctx: ReplyContext): string {
   let ctxBlock = `视频标题：${ctx.videoTitle}`;
@@ -123,7 +124,7 @@ export async function batchJudge(
     const usage = data.usage;
 
     if (!content) {
-      console.warn(TAG, "⚠️ AI 返回空内容");
+      warn(TAG, "⚠️ AI 返回空内容");
       return { verdicts: [], usage };
     }
 

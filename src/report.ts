@@ -3,6 +3,7 @@
 // ============================================================
 
 const TAG = "[ruozhi-filter]";
+import { log, warn } from "./debug";
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -143,7 +144,7 @@ export async function triggerReport(
   try {
     const sr = renderer.shadowRoot;
     if (!sr) {
-      console.warn(TAG, "⚠️ 无 shadowRoot:", renderer.tagName);
+      warn(TAG, "⚠️ 无 shadowRoot:", renderer.tagName);
       return { opened: false, reasonCopied };
     }
 
@@ -163,11 +164,11 @@ export async function triggerReport(
       "#more button",
     ) as HTMLElement | null;
     if (!moreBtn) {
-      console.warn(TAG, "⚠️ 未找到「更多」按钮");
+      warn(TAG, "⚠️ 未找到「更多」按钮");
       return { opened: false, reasonCopied };
     }
 
-    console.log(TAG, "🔍 点击「更多」...");
+    log(TAG, "🔍 点击「更多」...");
     moreBtn.click();
 
     const ok = await waitFor(() => {
@@ -182,7 +183,7 @@ export async function triggerReport(
       );
     }, 2000);
     if (!ok) {
-      console.warn(TAG, "⚠️ 菜单未显示");
+      warn(TAG, "⚠️ 菜单未显示");
       return { opened: false, reasonCopied };
     }
 
@@ -192,14 +193,14 @@ export async function triggerReport(
       "举报",
     ) as HTMLElement | null;
     if (!reportLi) {
-      console.warn(TAG, "⚠️ 菜单中未找到「举报」");
+      warn(TAG, "⚠️ 菜单中未找到「举报」");
       return { opened: false, reasonCopied };
     }
 
-    console.log(TAG, "🔍 点击「举报」...");
+    log(TAG, "🔍 点击「举报」...");
     reportLi.click();
     waitAndFillReportForm(reason);
-    console.log(TAG, "✅ 已触发原生举报");
+    log(TAG, "✅ 已触发原生举报");
     return { opened: true, reasonCopied };
   } finally {
     renderer.style.display = prevDisplay;
@@ -234,7 +235,7 @@ function waitAndFillReportForm(reason: string): void {
             ) as HTMLElement | null;
             if (sp) {
               sp.click();
-              console.log(TAG, "✅ 已选中「引战、不友善言论」");
+              log(TAG, "✅ 已选中「引战、不友善言论」");
               break;
             }
           }
@@ -258,7 +259,7 @@ function waitAndFillReportForm(reason: string): void {
       ta.value = reason.slice(0, 200);
       ta.dispatchEvent(new Event("input", { bubbles: true }));
       ta.dispatchEvent(new Event("change", { bubbles: true }));
-      console.log(TAG, "✅ 已自动填写举报理由");
+      log(TAG, "✅ 已自动填写举报理由");
       return;
     }
     if (Date.now() - s < 4000) setTimeout(f, 300);

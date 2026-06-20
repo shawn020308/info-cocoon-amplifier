@@ -60,6 +60,8 @@ export interface FilterConfig {
   enableBlacklist: boolean;
   /** 手动拉黑是否需要确认弹窗 */
   blacklistConfirm: boolean;
+  /** 开发者模式：开启后显示调试日志 */
+  devMode: boolean;
   /** 黑名单严格度: 0 = 仅折叠, 1 = 折叠+标记, 2 = 直接拉黑 */
   blacklistStrictness: number;
   /** 自定义token单价 (元/百万token) */
@@ -149,6 +151,7 @@ export const DEFAULT_CONFIG: FilterConfig = {
   enableAI: true,
   enableBlacklist: true,
   blacklistConfirm: true,
+  devMode: false,
   blacklistStrictness: 1,
   pricePerMToken: 1.1,
   sendUname: false,

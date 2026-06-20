@@ -4,6 +4,7 @@
 // ============================================================
 import { openDB, type IDBPDatabase } from "idb";
 import type { BlacklistRecord, CacheEntry } from "./types";
+import { log } from "./debug";
 
 const DB_NAME = "ruozhi-filter-db";
 const DB_VERSION = 4;
