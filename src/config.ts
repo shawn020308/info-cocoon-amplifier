@@ -54,7 +54,7 @@ export function getConfig(): FilterConfig {
   return {
     apiKey: "",
     apiEndpoint: "https://api.deepseek.com/chat/completions",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     theme: "github",
     prompt: "",
     foldMode: "classic" as const,
