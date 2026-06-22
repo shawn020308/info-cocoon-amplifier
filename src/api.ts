@@ -61,23 +61,36 @@ function buildRefineBody(
     messages: [
       {
         role: "system",
-        content: `你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。
+        content: `你是用户心理画像分析助手。你的任务是透过用户每一次拉黑/放过操作，推断其背后的心理动机、价值判断与认知需求，而非简单归纳行为表象。
 
 纠正记录说明：
 - "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）
 - "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）
 
-请严格按以下格式输出画像（300字以内）：
-应过滤：[用户明确不想看的内容，基于拉黑案例归纳]
-应放过：[用户想保留的内容，基于放过案例归纳]
-立场：[一句话概括用户倾向]
+用户拉黑的真实心理动机通常不是"话题类型"，而是对内容背后的认知质量和人格特质的判断。例如：
+- "说话弱智" → 用户排斥低质量思考：以偏概全、逻辑混乱、反智简化、非黑即白的二极管思维
+- "自我中心" → 用户排斥自恋型表达：缺乏共情、把自己的感受当普世真理、无法换位思考、好为人师
+- 也可能是对情绪动机的反感：纯粹的情绪发泄、刷存在感、优越感展示、故意挑事
 
-仅输出JSON：{"refinedProfile":"..."}`,
+分析原则：
+- 不要只描述"用户过滤了X类内容"，要分析"用户过滤X是因为他看重Y"
+- 从行为模式反推用户的深层需求：他想通过筛选获得什么体验？在回避什么？
+- 注意矛盾中的一致性：看似矛盾的选择恰恰揭示其判断标准的核心
+- 画像应具备预测力：能帮助预判用户对新内容的反应
+
+refinedProfile 应覆盖以下维度（300字以内，自然段落融合表达，不要编号堆砌）：
+认知门槛：用户对评论质量的底线是什么？哪些思维方式会触发过滤？
+人格雷达：用户对哪些人格特质敏感？这反映了用户自身的什么价值观？
+容忍边界：用户何时会放过（如讽刺/反讽/自嘲）？何时会拉黑看似无害的内容（如伪客观的说教）？
+预测指南：基于以上心理模式，用户未来可能排斥/接纳什么特征的内容。
+
+请严格输出以下JSON格式，refinedProfile 字段包含上述分析内容：
+{"refinedProfile":"...(300字以内)"}`,
       },
       { role: "user", content: instruction },
     ],
     temperature: 0,
-    max_tokens: 512,
+    max_tokens: 8192,
   };
   if (preset.supportsJsonFormat) {
     body.response_format = { type: "json_object" };
@@ -356,23 +369,48 @@ async function _refineProfile(force: boolean): Promise<void> {
     typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
   ) as typeof fetch;
 
+  const reqBody = buildRefineBody(config, instruction);
+  log(
+    TAG,
+    "画像更新 请求体 model:",
+    reqBody.model,
+    "max_tokens:",
+    reqBody.max_tokens,
+  );
+
   try {
+    const fetchStart = Date.now();
     const response = await fetcher(config.apiEndpoint, {
       method: "POST",
       headers: buildHeaders(config),
-      body: JSON.stringify(buildRefineBody(config, instruction)),
+      body: JSON.stringify(reqBody),
     });
 
+    log(
+      TAG,
+      `画像更新 API HTTP ${response.status}, ${Date.now() - fetchStart}ms`,
+    );
+
     if (!response.ok) {
-      console.error(TAG, `Profile update API error ${response.status}`);
+      const errText = await response.text();
+      console.error(
+        TAG,
+        `Profile update API error ${response.status}:`,
+        errText.slice(0, 300),
+      );
       return;
     }
 
     const data = await response.json();
+    log(TAG, "画像更新 原始响应:", JSON.stringify(data).slice(0, 500));
     const content = data.choices?.[0]?.message?.content;
     console.log(TAG, "画像更新 DeepSeek 返回内容:", content);
     if (!content) {
-      warn(TAG, " 画像更新: AI 返回空内容");
+      warn(
+        TAG,
+        " 画像更新: AI 返回空内容, raw choices:",
+        JSON.stringify(data.choices).slice(0, 300),
+      );
       return;
     }
 
