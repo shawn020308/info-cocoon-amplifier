@@ -17,6 +17,7 @@ export interface PendingComment {
 const IGNORE_TEXTS = new Set([
   "回复",
   "举报",
+  "硬核会员举报",
   "点赞",
   "踩",
   "收起",
@@ -73,14 +74,23 @@ export function extractComment(el: Element): PendingComment | null {
        (el as HTMLElement).className || el.getAttribute("class") || "",
       ).toLowerCase();
       if (
-       cls.includes("sub-reply") ||
-       cls.includes("reply-item") ||
-       cls.includes("fan") ||
-       cls.includes("medal") ||
-       tag.includes("-reply") ||
-       tag.includes("-replies")
+        cls.includes("sub-reply") ||
+        cls.includes("reply-item") ||
+        cls.includes("fan") ||
+        cls.includes("medal") ||
+        tag.includes("-reply") ||
+        tag.includes("-replies")
       )
-       continue;
+        continue;
+      // 跳过 B 站评论区操作按钮/UI 元素（举报、回复、点赞等按钮文本不应混入评论内容）
+      if (
+        cls.includes("report") ||
+        cls.includes("operation") ||
+        cls.includes("btn") ||
+        cls.includes("action") ||
+        tag === "button"
+      )
+        continue;
       // 如果子元素有 shadowRoot，递归进入
       if (el.shadowRoot) {
        text += deepInnerText(el.shadowRoot) + "\n";

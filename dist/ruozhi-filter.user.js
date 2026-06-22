@@ -1364,6 +1364,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   const IGNORE_TEXTS = /* @__PURE__ */ new Set([
     "回复",
     "举报",
+    "硬核会员举报",
     "点赞",
     "踩",
     "收起",
@@ -1406,6 +1407,8 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
             el2.className || el2.getAttribute("class") || ""
           ).toLowerCase();
           if (cls.includes("sub-reply") || cls.includes("reply-item") || cls.includes("fan") || cls.includes("medal") || tag2.includes("-reply") || tag2.includes("-replies"))
+            continue;
+          if (cls.includes("report") || cls.includes("operation") || cls.includes("btn") || cls.includes("action") || tag2 === "button")
             continue;
           if (el2.shadowRoot) {
             text += deepInnerText(el2.shadowRoot) + "\n";
