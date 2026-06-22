@@ -680,6 +680,7 @@ function buildPanelHTML(config: FilterConfig): string {
           <option value="light" ${sel(config.foldMode, "light")} style="${opt}">极简 — 细灰线标记</option>
           <option value="dim" ${sel(config.foldMode, "dim")} style="${opt}">弱化 — 几乎不可见</option>
           <option value="none" ${sel(config.foldMode, "none")} style="${opt}">隐藏 — 直接移除评论</option>
+          <option value="clean" ${sel(config.foldMode, "clean")} style="${opt}">护眼 — 高斯模糊内容</option>
         </select>
       </div>
     </div>
@@ -750,6 +751,15 @@ function buildPanelHTML(config: FilterConfig): string {
       </div>
     </div>
 
+    <!-- 预过滤卡片 -->
+    <div style="${cardStyle}">
+      <div style="${secLabel}">🔍 预过滤 (节省Token)</div>
+      <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">开启后，匹配的评论不再发送给 AI 判定。全部关闭则不预过滤。</div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-english" type="checkbox" ${cb(config.prefilterEnglish)} style="accent-color:${COLOR.accent}">跳过纯英文短评（如 "good""nb"）</label></div>
+    </div>
+
     <!-- 操作区 -->
     <div style="padding-top:8px;margin-top:12px">
       <button id="ruozhi-save" style="width:100%;padding:10px;border:none;border-radius:6px;background:${COLOR.accent};color:${COLOR.textOnAccent};font-size:14px;font-weight:600;cursor:pointer;font-family:${FONT};margin-bottom:8px">保存设置</button>
@@ -792,6 +802,11 @@ function buildPanelHTML(config: FilterConfig): string {
         <button id="ruozhi-kb-add" style="padding:7px 14px;border:none;border-radius:4px;background:${COLOR.accent};color:${COLOR.textOnAccent};font-size:13px;cursor:pointer;white-space:nowrap;font-family:${FONT}">添加</button>
       </div>
       <div id="ruozhi-kb-list" style="font-size:13px;color:${COLOR.text}">${kbItems || '<div style="text-align:center;color:' + COLOR.muted + ';padding:20px">暂无条目</div>'}</div>
+      <div style="margin-top:10px;display:flex;gap:6px">
+        <button id="ruozhi-kb-export" style="padding:4px 12px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};font-size:12px;cursor:pointer;font-family:${FONT}">导出</button>
+        <button id="ruozhi-kb-import" style="padding:4px 12px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};font-size:12px;cursor:pointer;font-family:${FONT}">导入</button>
+        <input id="ruozhi-kb-file" type="file" accept=".json" style="display:none">
+      </div>
       <div id="ruozhi-kb-status" style="margin-top:10px;font-size:13px;min-height:18px"></div>
     </div>
     <!-- 学习记录 -->
@@ -934,6 +949,15 @@ function bindPanelEvents(
           (root.querySelector("#ruozhi-font-scale-label") as HTMLElement)
             ?.textContent ?? "1.0",
         ) || 1.0,
+      prefilterShort:
+        (root.querySelector("#ruozhi-prefilter-short") as HTMLInputElement)
+          ?.checked ?? false,
+      prefilterSymbols:
+        (root.querySelector("#ruozhi-prefilter-symbols") as HTMLInputElement)
+          ?.checked ?? false,
+      prefilterEnglish:
+        (root.querySelector("#ruozhi-prefilter-english") as HTMLInputElement)
+          ?.checked ?? false,
     };
     saveConfig(newConfig);
     onConfigChange(newConfig);
@@ -1220,6 +1244,95 @@ function bindKnowledgeEvents(root: HTMLElement): void {
       (root.querySelector("#ruozhi-kb-add") as HTMLElement)?.click();
     }
   });
+
+  // ── 导出知识库 ──
+  const exportBtn = root.querySelector("#ruozhi-kb-export") as HTMLElement;
+  if (exportBtn && !exportBtn.dataset.bound) {
+    exportBtn.dataset.bound = "1";
+    exportBtn.addEventListener("click", () => {
+      try {
+        const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+        const entries = Array.isArray(cfg.knowledgeBase)
+          ? cfg.knowledgeBase
+          : [];
+        const blob = new Blob(
+          [
+            JSON.stringify(
+              {
+                version: 1,
+                description: "B站评论过滤 · 语境知识库",
+                exportedAt: new Date().toISOString(),
+                entryCount: entries.length,
+                entries,
+              },
+              null,
+              2,
+            ),
+          ],
+          { type: "application/json" },
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `ruozhi-kb-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        kbStatus(root, `已导出 ${entries.length} 条`, COLOR.green);
+      } catch {
+        kbStatus(root, "导出失败", COLOR.red);
+      }
+    });
+  }
+
+  // ── 导入知识库 ──
+  const fileInput = root.querySelector("#ruozhi-kb-file") as HTMLInputElement;
+  const importBtn = root.querySelector("#ruozhi-kb-import") as HTMLElement;
+  if (importBtn && !importBtn.dataset.bound) {
+    importBtn.dataset.bound = "1";
+    importBtn.addEventListener("click", () => {
+      fileInput?.click();
+    });
+    fileInput?.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.entries || !Array.isArray(data.entries)) {
+          kbStatus(root, "格式无效：缺少 entries 数组", COLOR.red);
+          return;
+        }
+        const incoming = (data.entries as string[])
+          .filter((e) => typeof e === "string" && e.trim().length > 0)
+          .map((e) => e.trim());
+        if (incoming.length === 0) {
+          kbStatus(root, "文件中无有效条目", COLOR.amber);
+          return;
+        }
+        const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+        if (!Array.isArray(cfg.knowledgeBase)) cfg.knowledgeBase = [];
+        let added = 0;
+        for (const entry of incoming) {
+          if (!cfg.knowledgeBase.includes(entry)) {
+            cfg.knowledgeBase.push(entry);
+            added++;
+          }
+        }
+        GM_setValue("ruozhi-config", JSON.stringify(cfg));
+        refreshConfig(cfg);
+        refreshKBList(root);
+        kbStatus(
+          root,
+          `导入了 ${added} 条 (共 ${incoming.length} 条，跳过 ${incoming.length - added} 条重复)`,
+          COLOR.green,
+        );
+      } catch {
+        kbStatus(root, "文件解析失败，请检查 JSON 格式", COLOR.red);
+      } finally {
+        fileInput.value = "";
+      }
+    });
+  }
 
   root.querySelector("#ruozhi-kb-list")?.addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement).closest(".ruozhi-kb-del");
@@ -1532,7 +1645,7 @@ export function foldEl(
   el: Element,
   info: PendingComment,
   verdict: { reason: string; severity: string },
-  style: "classic" | "light" | "dim" = "classic",
+  style: "classic" | "light" | "dim" | "clean" = "classic",
 ): boolean {
   try {
     if ((el as HTMLElement).style.display === "none") return false;
@@ -1564,6 +1677,25 @@ export function foldEl(
   <button class="ruozhi-report-btn" style="padding:3px 10px;font-size:11px;border:1px solid ${COLOR.red};border-radius:4px;background:${COLOR.bg};color:${COLOR.red};cursor:pointer;font-family:${FONT}">举报</button>
 </div>`
       : "";
+
+    // "clean" 模式：直接对原元素施加高斯模糊，不创建任何包装节点
+    if (style === "clean") {
+      const target = el as HTMLElement;
+      target.style.filter = "blur(6px)";
+      target.style.opacity = "0.35";
+      target.style.pointerEvents = "none";
+      target.style.userSelect = "none";
+      target.style.transition = "filter 0.3s ease, opacity 0.3s ease";
+      // 添加微弱的标记线，提示此处为已过滤评论
+      target.style.borderLeft = `2px solid ${COLOR.muted}33`;
+      target.style.paddingLeft = "6px";
+      // 同时隐藏已注入的举报/拉黑按钮
+      const btns = (el as any).__ruozhiBtns as HTMLElement[] | undefined;
+      if (btns) {
+        for (const btn of btns) btn.style.display = "none";
+      }
+      return true;
+    }
 
     const html = (() => {
       switch (style) {
@@ -1696,6 +1828,11 @@ export function foldEl(
 export function hideEl(el: Element): boolean {
   try {
     (el as HTMLElement).style.display = "none";
+    // 同时隐藏已注入的举报/拉黑按钮
+    const btns = (el as any).__ruozhiBtns as HTMLElement[] | undefined;
+    if (btns) {
+      for (const btn of btns) btn.style.display = "none";
+    }
     return true;
   } catch {
     return false;
@@ -1882,4 +2019,7 @@ export function injectManualBlacklistButton(
       console.error(TAG, "Quick report failed:", err);
     }
   });
+
+  // 存储按钮引用，供 hideEl / clean 模式隐藏按钮
+  (el as any).__ruozhiBtns = [btn, rptBtn];
 }

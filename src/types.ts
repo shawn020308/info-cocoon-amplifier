@@ -75,8 +75,8 @@ export interface FilterConfig {
   prompt: string;
   /** UI 主题 */
   theme: ThemeName;
-  /** 折叠样式: "none"=完全隐藏, "classic"=黄色警告条, "light"=极简灰线, "dim"=隐形弱化 */
-  foldMode: "none" | "classic" | "light" | "dim";
+  /** 折叠样式: "none"=完全隐藏, "classic"=黄色警告条, "light"=极简灰线, "dim"=隐形弱化, "clean"=清爽护眼(高斯模糊) */
+  foldMode: "none" | "classic" | "light" | "dim" | "clean";
   /** 是否启用AI过滤 */
   enableAI: boolean;
   /** 是否启用本地黑名单 */
@@ -107,6 +107,12 @@ export interface FilterConfig {
   knowledgeBase: string[];
   /** 全局字体缩放系数 (0.8 ~ 1.5) */
   fontScale: number;
+  /** 预过滤：跳过短评论（<3个非空白字符，如"哈""嗯"），默认关闭 */
+  prefilterShort: boolean;
+  /** 预过滤：跳过纯符号/表情评论（如"666""😂"），默认关闭 */
+  prefilterSymbols: boolean;
+  /** 预过滤：跳过纯英文短评论（如"good""nb"），默认关闭 */
+  prefilterEnglish: boolean;
 }
 
 /** AI判定结果: 单条评论的违规判定 */
@@ -182,13 +188,13 @@ export const DEFAULT_CONFIG: FilterConfig = {
   prompt: `请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。
 
 违规判定维度：
-- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
+- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
 - **人身攻击**：针对个人的侮辱、谩骂、诅咒和阴阳怪气
 - **引战/煽动**：故意挑起争端，使用极端化言论
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
 - **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
 - **政治敏感**：各类键盘政治黑话、谐音变体、暗喻代称等隐蔽违规表述；针对国家政策、公职人员发布恶意抹黑造谣、歪曲历史的内容；涉及煽动颠覆、破坏民族团结、泄露涉密信息的言论；恶意调侃英烈、违规使用国家象征符号的相关违规内容
-- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度，则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
   foldMode: "classic",
   enableAI: true,
   enableBlacklist: true,
@@ -205,4 +211,7 @@ export const DEFAULT_CONFIG: FilterConfig = {
   lastRefinedCount: 0,
   knowledgeBase: [],
   fontScale: 1.0,
+  prefilterShort: false,
+  prefilterSymbols: false,
+  prefilterEnglish: false,
 };

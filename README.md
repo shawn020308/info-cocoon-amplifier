@@ -9,7 +9,6 @@
   <sub>AI 驱动的 B 站评论过滤器 · Tampermonkey 脚本 · DeepSeek 智能判定</sub>
 </p>
 
----
 
 ## 这是什么
 
@@ -18,8 +17,6 @@
 接 DeepSeek API，AI 逐条判定评论是否违规。违规的折叠起来——想看的点开，不想看的就当不存在。
 
 附带一套本地黑名单、缓存加速、AI 自我学习，用久了它会越来越懂你的偏好。
-
----
 
 ## 能做什么
 
@@ -55,7 +52,6 @@
 
 ![学习面板](assets/learning-panel.png)
 
----
 
 ## 安装
 
@@ -68,7 +64,6 @@ npm run build
 
 `dist/ruozhi-filter.user.js` 拖进 Tampermonkey / Violentmonkey。
 
----
 
 ## 使用
 
@@ -77,14 +72,9 @@ npm run build
 3. 填 API Key，调一下 Prompt 和折叠风格
 4. 保存，滚到评论区即可
 
----
-
 ## 技术栈
 
 TypeScript · Vite · vite-plugin-monkey · IndexedDB (idb) · DeepSeek API
-
----
-
 
 
 ## 贡献者
@@ -94,8 +84,6 @@ TypeScript · Vite · vite-plugin-monkey · IndexedDB (idb) · DeepSeek API
 <a href="https://github.com/YifanHere">
   <img src="https://github.com/YifanHere.png" width="50" height="50" style="border-radius:50%" alt="YifanHere"/>
 </a>
-
----
 
 ## License
 

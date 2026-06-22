@@ -23,13 +23,13 @@
     prompt: `请帮我识别以下评论中，具有明显性别对立、引战、人身攻击、煽动性、仇恨言论的内容。
 
 违规判定维度：
-- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨（如"女人都拜金""男人都好色"）
+- **性别对立**：将某一性别标签化、污名化，煽动敌视/仇恨
 - **人身攻击**：针对个人的侮辱、谩骂、诅咒和阴阳怪气
 - **引战/煽动**：故意挑起争端，使用极端化言论
 - **降智煽动**：以偏概全、简化认知、传播刻板印象的明显反智言论
 - **仇恨言论**：涉及种族、地域、性别、性取向等的歧视性言论
 - **政治敏感**：各类键盘政治黑话、谐音变体、暗喻代称等隐蔽违规表述；针对国家政策、公职人员发布恶意抹黑造谣、歪曲历史的内容；涉及煽动颠覆、破坏民族团结、泄露涉密信息的言论；恶意调侃英烈、违规使用国家象征符号的相关违规内容
-- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度（如"有人说女人都拜金，这太荒谬了"），则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
+- **引用/复述判断**：如果用户是在引用、复述他人的歧视言论以反驳、批评或表达反对态度，则不应判定为违规。只有当用户本人表达、认同或宣扬歧视观点时，才标记为违规`,
     foldMode: "classic",
     enableAI: true,
     enableBlacklist: true,
@@ -45,7 +45,10 @@
     learningCorrections: [],
     lastRefinedCount: 0,
     knowledgeBase: [],
-    fontScale: 1
+    fontScale: 1,
+    prefilterShort: false,
+    prefilterSymbols: false,
+    prefilterEnglish: false
   };
   let _devMode = false;
   function setDevMode(v) {
@@ -432,12 +435,18 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       log(TAG$6, `API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
       if (!response.ok) {
         const errText = await response.text();
-        console.error(TAG$6, `API error ${response.status}:`, errText.slice(0, 200));
+        console.error(
+          TAG$6,
+          `API error ${response.status}:`,
+          errText.slice(0, 200)
+        );
         throw new Error(`DeepSeek API error ${response.status}`);
       }
       const data = await response.json();
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
+      console.log(TAG$6, "DeepSeek 返回内容:", content);
+      console.log(TAG$6, "DeepSeek 用量:", usage);
       if (!content) {
         warn(TAG$6, " AI 返回空内容");
         return { verdicts: [], usage };
@@ -555,6 +564,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       }
       const data = await response.json();
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
+      console.log(TAG$6, "画像更新 DeepSeek 返回内容:", content);
       if (!content) {
         warn(TAG$6, " 画像更新: AI 返回空内容");
         return;
@@ -1177,28 +1187,35 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       }
       const sr = form.shadowRoot;
       if (n <= 2) {
-        for (const opt of sr.querySelectorAll("#option")) {
-          const nameEl = opt.querySelector("#option-name");
-          if (nameEl && ((_a = nameEl.innerText) == null ? void 0 : _a.includes("引战"))) {
-            const radio = opt.querySelector("bili-radio");
-            if (radio && radio.shadowRoot) {
-              const sp = radio.shadowRoot.querySelector(
-                "#input"
+        const categoryKeywords = ["骚扰谩骂", "谩骂", "骚扰", "人身攻击", "引战"];
+        let matched = false;
+        for (const kw of categoryKeywords) {
+          for (const opt of sr.querySelectorAll("#option")) {
+            const nameEl = opt.querySelector("#option-name");
+            if (nameEl && ((_a = nameEl.innerText) == null ? void 0 : _a.includes(kw))) {
+              const radio = opt.querySelector("bili-radio");
+              if (radio && radio.shadowRoot) {
+                const sp = radio.shadowRoot.querySelector(
+                  "#input"
+                );
+                if (sp) {
+                  sp.click();
+                  log(TAG$5, `Selected '${kw}' category`);
+                  matched = true;
+                  break;
+                }
+              }
+              const inp = opt.querySelector(
+                'input[type="radio"][value="4"]'
               );
-              if (sp) {
-                sp.click();
-                log(TAG$5, "Selected 'Provocative/unfriendly' category");
+              if (inp) {
+                inp.click();
+                matched = true;
                 break;
               }
             }
-            const inp = opt.querySelector(
-              'input[type="radio"][value="4"]'
-            );
-            if (inp) {
-              inp.click();
-              break;
-            }
           }
+          if (matched) break;
         }
         setTimeout(f, 300);
         return;
@@ -1216,6 +1233,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (Date.now() - s < 4e3) setTimeout(f, 300);
     };
     setTimeout(f, 600);
+  }
+  async function triggerQuickReport(commentEl, reason) {
+    const { opened } = await triggerReport(commentEl, reason);
+    return { opened };
   }
   async function copyReason(reason) {
     const ok = await copyToClipboard(reason);
@@ -1483,7 +1504,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (uname !== "未知用户" && message.startsWith(uname)) {
         message = message.slice(uname.length).trim();
       }
-      if (!message || message.length < 2) return null;
+      if (!message || message.length < 1) return null;
       return { el, rpid, mid, uname, message };
     } catch (e) {
       warn("[ruozhi-filter]", "  extractComment 异常:", e);
@@ -1728,11 +1749,17 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   const scannedRpids = /* @__PURE__ */ new Set();
   let isFlushing = false;
   function skipAI(info) {
+    const config = getConfig();
+    if (!config.prefilterShort && !config.prefilterSymbols && !config.prefilterEnglish) {
+      return false;
+    }
     const msg = info.message.trim();
-    if ([...msg].filter((c) => c !== " ").length < 3) return true;
-    if (/^[\s\d\p{P}\p{S}\p{Emoji}，,。.！!？?…~～、]+$/u.test(msg) && msg.length < 15)
+    if (config.prefilterShort && [...msg].filter((c) => c !== " ").length < 3)
       return true;
-    if (/^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8) return true;
+    if (config.prefilterSymbols && /^[\s\d\p{P}\p{S}\p{Emoji}，,。.！!？?…~～、]+$/u.test(msg) && msg.length < 15)
+      return true;
+    if (config.prefilterEnglish && /^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8)
+      return true;
     return false;
   }
   function scanPage() {
@@ -2434,6 +2461,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
           <option value="light" ${sel(config.foldMode, "light")} style="${opt}">极简 — 细灰线标记</option>
           <option value="dim" ${sel(config.foldMode, "dim")} style="${opt}">弱化 — 几乎不可见</option>
           <option value="none" ${sel(config.foldMode, "none")} style="${opt}">隐藏 — 直接移除评论</option>
+          <option value="clean" ${sel(config.foldMode, "clean")} style="${opt}">护眼 — 高斯模糊内容</option>
         </select>
       </div>
     </div>
@@ -2504,6 +2532,15 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       </div>
     </div>
 
+    <!-- 预过滤卡片 -->
+    <div style="${cardStyle}">
+      <div style="${secLabel}">🔍 预过滤 (节省Token)</div>
+      <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">开启后，匹配的评论不再发送给 AI 判定。全部关闭则不预过滤。</div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-english" type="checkbox" ${cb(config.prefilterEnglish)} style="accent-color:${COLOR.accent}">跳过纯英文短评（如 "good""nb"）</label></div>
+    </div>
+
     <!-- 操作区 -->
     <div style="padding-top:8px;margin-top:12px">
       <button id="ruozhi-save" style="width:100%;padding:10px;border:none;border-radius:6px;background:${COLOR.accent};color:${COLOR.textOnAccent};font-size:14px;font-weight:600;cursor:pointer;font-family:${FONT};margin-bottom:8px">保存设置</button>
@@ -2546,6 +2583,11 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         <button id="ruozhi-kb-add" style="padding:7px 14px;border:none;border-radius:4px;background:${COLOR.accent};color:${COLOR.textOnAccent};font-size:13px;cursor:pointer;white-space:nowrap;font-family:${FONT}">添加</button>
       </div>
       <div id="ruozhi-kb-list" style="font-size:13px;color:${COLOR.text}">${kbItems || '<div style="text-align:center;color:' + COLOR.muted + ';padding:20px">暂无条目</div>'}</div>
+      <div style="margin-top:10px;display:flex;gap:6px">
+        <button id="ruozhi-kb-export" style="padding:4px 12px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};font-size:12px;cursor:pointer;font-family:${FONT}">导出</button>
+        <button id="ruozhi-kb-import" style="padding:4px 12px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};font-size:12px;cursor:pointer;font-family:${FONT}">导入</button>
+        <input id="ruozhi-kb-file" type="file" accept=".json" style="display:none">
+      </div>
       <div id="ruozhi-kb-status" style="margin-top:10px;font-size:13px;min-height:18px"></div>
     </div>
     <!-- 学习记录 -->
@@ -2605,7 +2647,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       });
     });
     (_b = root.querySelector("#ruozhi-save")) == null ? void 0 : _b.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l, _m, _n, _o;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l, _m, _n, _o, _p, _q, _r;
       let storedConfig = {};
       try {
         storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
@@ -2635,7 +2677,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         learningEnabled: ((_n = root.querySelector("#ruozhi-learning")) == null ? void 0 : _n.checked) ?? true,
         fontScale: parseFloat(
           ((_o = root.querySelector("#ruozhi-font-scale-label")) == null ? void 0 : _o.textContent) ?? "1.0"
-        ) || 1
+        ) || 1,
+        prefilterShort: ((_p = root.querySelector("#ruozhi-prefilter-short")) == null ? void 0 : _p.checked) ?? false,
+        prefilterSymbols: ((_q = root.querySelector("#ruozhi-prefilter-symbols")) == null ? void 0 : _q.checked) ?? false,
+        prefilterEnglish: ((_r = root.querySelector("#ruozhi-prefilter-english")) == null ? void 0 : _r.checked) ?? false
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -2862,6 +2907,88 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         (_a2 = root.querySelector("#ruozhi-kb-add")) == null ? void 0 : _a2.click();
       }
     });
+    const exportBtn = root.querySelector("#ruozhi-kb-export");
+    if (exportBtn && !exportBtn.dataset.bound) {
+      exportBtn.dataset.bound = "1";
+      exportBtn.addEventListener("click", () => {
+        try {
+          const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+          const entries = Array.isArray(cfg.knowledgeBase) ? cfg.knowledgeBase : [];
+          const blob = new Blob(
+            [
+              JSON.stringify(
+                {
+                  version: 1,
+                  description: "B站评论过滤 · 语境知识库",
+                  exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+                  entryCount: entries.length,
+                  entries
+                },
+                null,
+                2
+              )
+            ],
+            { type: "application/json" }
+          );
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `ruozhi-kb-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          kbStatus(root, `已导出 ${entries.length} 条`, COLOR.green);
+        } catch {
+          kbStatus(root, "导出失败", COLOR.red);
+        }
+      });
+    }
+    const fileInput = root.querySelector("#ruozhi-kb-file");
+    const importBtn = root.querySelector("#ruozhi-kb-import");
+    if (importBtn && !importBtn.dataset.bound) {
+      importBtn.dataset.bound = "1";
+      importBtn.addEventListener("click", () => {
+        fileInput == null ? void 0 : fileInput.click();
+      });
+      fileInput == null ? void 0 : fileInput.addEventListener("change", async () => {
+        var _a2;
+        const file = (_a2 = fileInput.files) == null ? void 0 : _a2[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          if (!data.entries || !Array.isArray(data.entries)) {
+            kbStatus(root, "格式无效：缺少 entries 数组", COLOR.red);
+            return;
+          }
+          const incoming = data.entries.filter((e) => typeof e === "string" && e.trim().length > 0).map((e) => e.trim());
+          if (incoming.length === 0) {
+            kbStatus(root, "文件中无有效条目", COLOR.amber);
+            return;
+          }
+          const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
+          if (!Array.isArray(cfg.knowledgeBase)) cfg.knowledgeBase = [];
+          let added = 0;
+          for (const entry of incoming) {
+            if (!cfg.knowledgeBase.includes(entry)) {
+              cfg.knowledgeBase.push(entry);
+              added++;
+            }
+          }
+          GM_setValue("ruozhi-config", JSON.stringify(cfg));
+          refreshConfig(cfg);
+          refreshKBList(root);
+          kbStatus(
+            root,
+            `导入了 ${added} 条 (共 ${incoming.length} 条，跳过 ${incoming.length - added} 条重复)`,
+            COLOR.green
+          );
+        } catch {
+          kbStatus(root, "文件解析失败，请检查 JSON 格式", COLOR.red);
+        } finally {
+          fileInput.value = "";
+        }
+      });
+    }
     (_c = root.querySelector("#ruozhi-kb-list")) == null ? void 0 : _c.addEventListener("click", (e) => {
       const btn = e.target.closest(".ruozhi-kb-del");
       if (!btn) return;
@@ -3100,6 +3227,21 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   <button class="ruozhi-copy-reason" style="padding:3px 10px;font-size:11px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};cursor:pointer;font-family:${FONT}">复制理由</button>
   <button class="ruozhi-report-btn" style="padding:3px 10px;font-size:11px;border:1px solid ${COLOR.red};border-radius:4px;background:${COLOR.bg};color:${COLOR.red};cursor:pointer;font-family:${FONT}">举报</button>
 </div>` : "";
+      if (style === "clean") {
+        const target = el;
+        target.style.filter = "blur(6px)";
+        target.style.opacity = "0.35";
+        target.style.pointerEvents = "none";
+        target.style.userSelect = "none";
+        target.style.transition = "filter 0.3s ease, opacity 0.3s ease";
+        target.style.borderLeft = `2px solid ${COLOR.muted}33`;
+        target.style.paddingLeft = "6px";
+        const btns = el.__ruozhiBtns;
+        if (btns) {
+          for (const btn of btns) btn.style.display = "none";
+        }
+        return true;
+      }
       const html = (() => {
         switch (style) {
           case "classic":
@@ -3120,10 +3262,9 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
           }
           default:
-            return `<div class="ruozhi-folded" style="background:${COLOR.surface};border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:${COLOR.secondary};cursor:pointer;user-select:none;font-family:${FONT}">
-<span style="margin-right:6px">${esc(label)}</span><span style="color:${COLOR.text}">${esc(info.uname)}</span><span class="ruozhi-fold-arrow" data-collapsed="+" data-expanded="-" style="float:right;font-size:12px;color:${COLOR.muted}">+</span>
-</div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
-<div style="margin-bottom:4px;font-size:11px;color:${COLOR.muted}">AI 判定: ${esc(verdict.reason)}</div>
+            return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
+  onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
+></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
         }
       })();
@@ -3215,6 +3356,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   function hideEl(el) {
     try {
       el.style.display = "none";
+      const btns = el.__ruozhiBtns;
+      if (btns) {
+        for (const btn of btns) btn.style.display = "none";
+      }
       return true;
     } catch {
       return false;
@@ -3241,6 +3386,20 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       whiteSpace: "nowrap",
       boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
       transition: "color 0.15s, border-color 0.15s, background 0.15s"
+    };
+  }
+  function rptBtnStyle() {
+    return { ...blBtnStyle(), color: COLOR.red, borderColor: COLOR.redBg };
+  }
+  function rptBtnHover() {
+    return { color: "#fff", borderColor: COLOR.red, background: COLOR.red };
+  }
+  function rptBtnDone() {
+    return {
+      ...blBtnDone(),
+      color: COLOR.green,
+      borderColor: COLOR.greenBg,
+      background: COLOR.greenBg
     };
   }
   function blBtnHover() {
@@ -3326,6 +3485,32 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         console.error(TAG$1, "Manual block failed:", err);
       }
     });
+    const rptBtn = document.createElement("span");
+    rptBtn.textContent = "举报";
+    rptBtn.title = "举报该评论（骚扰谩骂）";
+    applyStyles(rptBtn, rptBtnStyle());
+    parent.insertBefore(rptBtn, el);
+    rptBtn.addEventListener("mouseenter", () => {
+      if (rptBtn.dataset.done !== "1") applyStyles(rptBtn, rptBtnHover());
+    });
+    rptBtn.addEventListener("mouseleave", () => {
+      if (rptBtn.dataset.done !== "1") applyStyles(rptBtn, rptBtnStyle());
+    });
+    rptBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      try {
+        const { opened } = await triggerQuickReport(el, "骚扰谩骂");
+        if (opened) {
+          rptBtn.dataset.done = "1";
+          rptBtn.textContent = "已举报";
+          applyStyles(rptBtn, rptBtnDone());
+        }
+      } catch (err) {
+        console.error(TAG$1, "Quick report failed:", err);
+      }
+    });
+    el.__ruozhiBtns = [btn, rptBtn];
   }
   const TAG = "[ruozhi-filter]";
   async function main() {

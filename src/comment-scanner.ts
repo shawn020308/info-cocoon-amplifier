@@ -26,19 +26,31 @@ let isFlushing = false;
 
 // ── 本地预过滤：跳过明显无需 AI 判断的低价值评论 ──
 
-/** 预过滤：返回true表示跳过（不需要AI判定） */
+/** 预过滤：根据配置决定是否跳过（不需要AI判定） */
 function skipAI(info: PendingComment): boolean {
+  const config = getConfig();
+  // 三项预过滤全部关闭时，不做任何跳过
+  if (
+    !config.prefilterShort &&
+    !config.prefilterSymbols &&
+    !config.prefilterEnglish
+  ) {
+    return false;
+  }
   const msg = info.message.trim();
   // 过短（<3个非空白字符），如 "哈" "嗯" "dd"
-  if ([...msg].filter((c) => c !== " ").length < 3) return true;
+  if (config.prefilterShort && [...msg].filter((c) => c !== " ").length < 3)
+    return true;
   // 纯符号/表情/数字/标点（如 "666"、"2333"、"？？？"、"😂"）
   if (
+    config.prefilterSymbols &&
     /^[\s\d\p{P}\p{S}\p{Emoji}，,。.！!？?…~～、]+$/u.test(msg) &&
     msg.length < 15
   )
     return true;
   // 纯英文简单评论（如 "good"、"nice"、"nb"）
-  if (/^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8) return true;
+  if (config.prefilterEnglish && /^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8)
+    return true;
   return false;
 }
 
