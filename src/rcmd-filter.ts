@@ -133,7 +133,7 @@ async function judgeCards(
       { role: "user", content: userMessage },
     ],
     temperature: 0,
-    max_tokens: 4096,
+    max_tokens: 8192,
   };
   if (preset.supportsJsonFormat) {
     body.response_format = { type: "json_object" };

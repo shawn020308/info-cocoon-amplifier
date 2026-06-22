@@ -1617,7 +1617,7 @@ function buildLearningPanelHTML(): string {
       <span style="font-size:12px;font-weight:600;color:${COLOR.purple}">AI 学习画像（可编辑）</span>
       <span style="font-size:10px;color:${COLOR.secondary}">每次 API 调用自动注入</span>
     </div>
-    <textarea id="ruozhi-profile-edit" rows="4" style="width:100%;padding:8px;border:1px solid ${COLOR.border};border-radius:4px;font-size:12px;color:${COLOR.text};background:${COLOR.surface};resize:vertical;box-sizing:border-box;line-height:1.6;font-family:${FONT};outline:none;color-scheme:${COLOR === THEMES.dark ? "dark" : "light"}">${esc(profile)}</textarea>
+    <textarea id="ruozhi-profile-edit" rows="8" style="width:100%;padding:8px;border:1px solid ${COLOR.border};border-radius:4px;font-size:12px;color:${COLOR.text};background:${COLOR.surface};resize:vertical;box-sizing:border-box;line-height:1.6;font-family:${FONT};outline:none;color-scheme:${COLOR === THEMES.dark ? "dark" : "light"}">${esc(profile)}</textarea>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
       <div style="display:flex;gap:6px">
         <button id="ruozhi-profile-save" style="padding:4px 12px;font-size:11px;border:none;border-radius:4px;background:${COLOR.purple};color:${COLOR.textOnAccent};cursor:pointer;font-family:${FONT}">保存画像</button>
@@ -1720,10 +1720,10 @@ function bindLearningEvents(container: Element): void {
       if (!val) return;
       try {
         const cfg = JSON.parse(GM_getValue("ruozhi-config", "{}"));
-        cfg.learnedProfile = val.slice(0, 300);
+        cfg.learnedProfile = val.slice(0, 2000);
         GM_setValue("ruozhi-config", JSON.stringify(cfg));
         refreshConfig(cfg);
-        profileEdit.value = val.slice(0, 300);
+        profileEdit.value = val.slice(0, 2000);
         showToast("画像已保存", 2000);
       } catch {
         /* */
