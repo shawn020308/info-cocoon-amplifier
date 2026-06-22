@@ -15,7 +15,11 @@ import { pruneCache, getBlacklistCount, initMemoryCache } from "./db";
 import { log } from "./debug";
 import { refineProfileNow } from "./api";
 import { setRefineCallback } from "./learning";
-import { startRcmdFilter, stopRcmdFilter } from "./rcmd-filter";
+import {
+  startRcmdFilter,
+  stopRcmdFilter,
+  onVideoNavigate,
+} from "./rcmd-filter";
 
 const TAG = "[ruozhi-filter]";
 
@@ -39,12 +43,19 @@ async function main(): Promise<void> {
   // ★ 推荐视频过滤：根据配置决定是否启动
   if (config.enableRcmdFilter) startRcmdFilter();
 
+  // ★ SPA 导航检测：B站点击推荐视频不刷新页面，需监听 URL 变化
+  let lastUrl = location.href;
   const titleEl = document.querySelector("title");
   if (titleEl) {
     new MutationObserver(() => {
       updateContext({
         videoTitle: document.title.replace(/[ _-]哔哩哔哩.*$/, ""),
       });
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        extractVideoInfo();
+        onVideoNavigate();
+      }
     }).observe(titleEl, {
       childList: true,
       characterData: true,

@@ -450,12 +450,31 @@ function tryBindObserver(): void {
   log(TAG, "Observer attached");
 }
 
+function disconnectObserver(): void {
+  if (rcmdObserver) {
+    rcmdObserver.disconnect();
+    rcmdObserver = null;
+  }
+}
+
+/** 完全重置推荐过滤状态（SPA 导航时调用） */
+function resetRcmdState(): void {
+  clearFlushTimers();
+  disconnectObserver();
+  pendingCards = [];
+  seenUrls.clear();
+  isJudging = false;
+  rcmdPhase = "collecting";
+  unblurRcmd();
+  log(TAG, "状态已重置（视频切换）");
+}
+
 export function startRcmdFilter(): void {
   const config = getConfig();
   if (!config.enableRcmdFilter) return;
   log(TAG, "started");
 
-  rcmdPhase = "collecting";
+  resetRcmdState();
 
   doScan();
   tryBindObserver();
@@ -480,4 +499,24 @@ export function stopRcmdFilter(): void {
   seenUrls.clear();
   rcmdPhase = "collecting";
   unblurRcmd();
+}
+
+/**
+ * SPA 导航到新视频时调用。
+ * 重置所有状态 + 重新绑定 Observer + 重新扫描。
+ * 仅在 rcmd-filter 已启动（pollTimer 活跃）时生效。
+ */
+export function onVideoNavigate(): void {
+  if (!pollTimer) return; // 未启动
+  const config = getConfig();
+  if (!config.enableRcmdFilter) return;
+
+  log(TAG, "检测到视频切换，重置推荐过滤");
+  resetRcmdState();
+
+  // 新页面的 DOM 尚未渲染完成，延迟扫描
+  setTimeout(() => {
+    doScan();
+    tryBindObserver();
+  }, 1500);
 }

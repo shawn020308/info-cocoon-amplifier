@@ -4051,11 +4051,27 @@ ${prompt}
     rcmdObserver.observe(rcmdTab, { childList: true, subtree: true });
     log(TAG$1, "Observer attached");
   }
+  function disconnectObserver() {
+    if (rcmdObserver) {
+      rcmdObserver.disconnect();
+      rcmdObserver = null;
+    }
+  }
+  function resetRcmdState() {
+    clearFlushTimers();
+    disconnectObserver();
+    pendingCards = [];
+    seenUrls.clear();
+    isJudging = false;
+    rcmdPhase = "collecting";
+    unblurRcmd();
+    log(TAG$1, "状态已重置（视频切换）");
+  }
   function startRcmdFilter() {
     const config = getConfig();
     if (!config.enableRcmdFilter) return;
     log(TAG$1, "started");
-    rcmdPhase = "collecting";
+    resetRcmdState();
     doScan();
     tryBindObserver();
     pollTimer = setInterval(() => {
@@ -4078,6 +4094,17 @@ ${prompt}
     rcmdPhase = "collecting";
     unblurRcmd();
   }
+  function onVideoNavigate() {
+    if (!pollTimer) return;
+    const config = getConfig();
+    if (!config.enableRcmdFilter) return;
+    log(TAG$1, "检测到视频切换，重置推荐过滤");
+    resetRcmdState();
+    setTimeout(() => {
+      doScan();
+      tryBindObserver();
+    }, 1500);
+  }
   const TAG = "[ruozhi-filter]";
   async function main() {
     log(TAG, "Plugin starting...");
@@ -4091,12 +4118,18 @@ ${prompt}
     extractVideoInfo();
     startDOMScanner();
     if (config.enableRcmdFilter) startRcmdFilter();
+    let lastUrl = location.href;
     const titleEl = document.querySelector("title");
     if (titleEl) {
       new MutationObserver(() => {
         updateContext({
           videoTitle: document.title.replace(/[ _-]哔哩哔哩.*$/, "")
         });
+        if (location.href !== lastUrl) {
+          lastUrl = location.href;
+          extractVideoInfo();
+          onVideoNavigate();
+        }
       }).observe(titleEl, {
         childList: true,
         characterData: true,
