@@ -3876,8 +3876,8 @@ ${prompt}
   function blurRcmd() {
     const container = getRcmdContainer();
     if (container) {
-      container.style.filter = "blur(12px)";
-      container.style.transition = "filter 0.3s ease";
+      container.style.filter = "blur(4px) brightness(0.85)";
+      container.style.transition = "filter 0.5s ease";
       log(TAG$1, "推荐区已模糊");
     }
   }
@@ -3885,6 +3885,7 @@ ${prompt}
     const container = getRcmdContainer();
     if (container) {
       container.style.filter = "";
+      container.style.transition = "filter 0.5s ease";
       log(TAG$1, "推荐区已恢复");
     }
   }
