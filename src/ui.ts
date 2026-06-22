@@ -19,7 +19,7 @@ import {
   commentHash,
   addToBlacklist,
 } from "./db";
-import { triggerReport, copyReason } from "./report";
+import { triggerReport, triggerQuickReport, copyReason } from "./report";
 import { resetStats, refreshConfig, currentContext } from "./interceptor";
 import { recordLearning } from "./learning";
 import {
@@ -1585,10 +1585,9 @@ export function foldEl(
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
         }
         default: // light
-          return `<div class="ruozhi-folded" style="background:${COLOR.surface};border-left:3px solid ${accent};padding:6px 12px;margin:4px 0;font-size:12px;color:${COLOR.secondary};cursor:pointer;user-select:none;font-family:${FONT}">
-<span style="margin-right:6px">${esc(label)}</span><span style="color:${COLOR.text}">${esc(info.uname)}</span><span class="ruozhi-fold-arrow" data-collapsed="+" data-expanded="-" style="float:right;font-size:12px;color:${COLOR.muted}">+</span>
-</div><div class="ruozhi-original" style="display:none;padding:6px 12px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
-<div style="margin-bottom:4px;font-size:11px;color:${COLOR.muted}">AI 判定: ${esc(verdict.reason)}</div>
+          return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
+  onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
+></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
       }
     })();
@@ -1732,6 +1731,23 @@ function blBtnStyle(): Record<string, string> {
   };
 }
 
+function rptBtnStyle(): Record<string, string> {
+  return { ...blBtnStyle(), color: COLOR.red, borderColor: COLOR.redBg };
+}
+
+function rptBtnHover(): Record<string, string> {
+  return { color: "#fff", borderColor: COLOR.red, background: COLOR.red };
+}
+
+function rptBtnDone(): Record<string, string> {
+  return {
+    ...blBtnDone(),
+    color: COLOR.green,
+    borderColor: COLOR.greenBg,
+    background: COLOR.greenBg,
+  };
+}
+
 function blBtnHover(): Record<string, string> {
   return {
     color: COLOR.red,
@@ -1833,6 +1849,37 @@ export function injectManualBlacklistButton(
       applyStyles(btn, blBtnDone());
     } catch (err) {
       console.error(TAG, "Manual block failed:", err);
+    }
+  });
+
+  // ── 原生举报按钮（一键呼出举报弹窗） ──
+  const rptBtn = document.createElement("span");
+  rptBtn.textContent = "举报";
+  rptBtn.title = "举报该评论（骚扰谩骂）";
+  applyStyles(rptBtn, rptBtnStyle());
+
+  parent.insertBefore(rptBtn, el);
+
+  rptBtn.addEventListener("mouseenter", () => {
+    if (rptBtn.dataset.done !== "1") applyStyles(rptBtn, rptBtnHover());
+  });
+  rptBtn.addEventListener("mouseleave", () => {
+    if (rptBtn.dataset.done !== "1") applyStyles(rptBtn, rptBtnStyle());
+  });
+
+  rptBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    try {
+      const { opened } = await triggerQuickReport(el, "骚扰谩骂");
+      if (opened) {
+        rptBtn.dataset.done = "1";
+        rptBtn.textContent = "已举报";
+        applyStyles(rptBtn, rptBtnDone());
+      }
+    } catch (err) {
+      console.error(TAG, "Quick report failed:", err);
     }
   });
 }

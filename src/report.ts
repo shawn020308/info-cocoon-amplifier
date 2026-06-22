@@ -201,28 +201,36 @@ function waitAndFillReportForm(reason: string): void {
     const sr = (form as HTMLElement).shadowRoot!;
 
     if (n <= 2) {
-      for (const opt of sr.querySelectorAll("#option")) {
-        const nameEl = opt.querySelector("#option-name");
-        if (nameEl && (nameEl as HTMLElement).innerText?.includes("引战")) {
-          const radio = opt.querySelector("bili-radio");
-          if (radio && (radio as HTMLElement).shadowRoot) {
-            const sp = (radio as HTMLElement).shadowRoot!.querySelector(
-              "#input",
+      // 按优先级匹配举报类型：骚扰谩骂 > 谩骂 > 骚扰 > 人身攻击 > 引战
+      const categoryKeywords = ["骚扰谩骂", "谩骂", "骚扰", "人身攻击", "引战"];
+      let matched = false;
+      for (const kw of categoryKeywords) {
+        for (const opt of sr.querySelectorAll("#option")) {
+          const nameEl = opt.querySelector("#option-name");
+          if (nameEl && (nameEl as HTMLElement).innerText?.includes(kw)) {
+            const radio = opt.querySelector("bili-radio");
+            if (radio && (radio as HTMLElement).shadowRoot) {
+              const sp = (radio as HTMLElement).shadowRoot!.querySelector(
+                "#input",
+              ) as HTMLElement | null;
+              if (sp) {
+                sp.click();
+                log(TAG, `Selected '${kw}' category`);
+                matched = true;
+                break;
+              }
+            }
+            const inp = opt.querySelector(
+              'input[type="radio"][value="4"]',
             ) as HTMLElement | null;
-            if (sp) {
-              sp.click();
-              log(TAG, "Selected 'Provocative/unfriendly' category");
+            if (inp) {
+              inp.click();
+              matched = true;
               break;
             }
           }
-          const inp = opt.querySelector(
-            'input[type="radio"][value="4"]',
-          ) as HTMLElement | null;
-          if (inp) {
-            inp.click();
-            break;
-          }
         }
+        if (matched) break;
       }
       setTimeout(f, 300);
       return;
@@ -241,6 +249,15 @@ function waitAndFillReportForm(reason: string): void {
     if (Date.now() - s < 4000) setTimeout(f, 300);
   };
   setTimeout(f, 600);
+}
+
+/** 一键举报：触发原生举报弹窗 + 自动选择"骚扰谩骂" + 填入理由 */
+export async function triggerQuickReport(
+  commentEl: Element,
+  reason?: string,
+): Promise<{ opened: boolean }> {
+  const { opened } = await triggerReport(commentEl, reason ?? "骚扰谩骂");
+  return { opened };
 }
 
 export async function copyReason(reason: string): Promise<boolean> {
