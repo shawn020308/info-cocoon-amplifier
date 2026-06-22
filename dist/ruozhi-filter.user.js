@@ -3227,21 +3227,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   <button class="ruozhi-copy-reason" style="padding:3px 10px;font-size:11px;border:1px solid ${COLOR.border};border-radius:4px;background:${COLOR.bg};color:${COLOR.secondary};cursor:pointer;font-family:${FONT}">复制理由</button>
   <button class="ruozhi-report-btn" style="padding:3px 10px;font-size:11px;border:1px solid ${COLOR.red};border-radius:4px;background:${COLOR.bg};color:${COLOR.red};cursor:pointer;font-family:${FONT}">举报</button>
 </div>` : "";
-      if (style === "clean") {
-        const target = el;
-        target.style.filter = "blur(6px)";
-        target.style.opacity = "0.35";
-        target.style.pointerEvents = "none";
-        target.style.userSelect = "none";
-        target.style.transition = "filter 0.3s ease, opacity 0.3s ease";
-        target.style.borderLeft = `2px solid ${COLOR.muted}33`;
-        target.style.paddingLeft = "6px";
-        const btns = el.__ruozhiBtns;
-        if (btns) {
-          for (const btn of btns) btn.style.display = "none";
-        }
-        return true;
-      }
       const html = (() => {
         switch (style) {
           case "classic":
@@ -3261,6 +3246,14 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 <div style="margin-bottom:2px;font-size:10px;color:${COLOR.muted}">${esc(verdict.reason)}</div>
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
           }
+          case "clean":
+            return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
+  onmouseenter="this.style.opacity='0.8'" onmouseleave="this.style.opacity='1'"
+></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;font-family:${FONT}">
+<div style="filter:blur(6px);pointer-events:none;user-select:none;opacity:0.5;margin-bottom:6px">
+<div style="font-size:11px;color:${COLOR.secondary};margin-bottom:4px">AI 判定: <span style="font-weight:500">${esc(verdict.reason)}</span></div>
+<div style="color:${COLOR.text};white-space:pre-wrap;word-break:break-word;line-height:1.5">${esc(info.message)}</div>
+</div>${reportBtnsHTML}</div>`;
           default:
             return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
   onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
@@ -3275,6 +3268,12 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       (_a = el.parentNode) == null ? void 0 : _a.insertBefore(foldElDiv, el);
       (_b = el.parentNode) == null ? void 0 : _b.insertBefore(origElDiv, el);
       el.style.display = "none";
+      if (style === "clean") {
+        const btns = el.__ruozhiBtns;
+        if (btns) {
+          for (const btn of btns) btn.style.display = "none";
+        }
+      }
       foldElDiv.addEventListener("click", () => {
         const collapsed = origElDiv.style.display === "none";
         origElDiv.style.display = collapsed ? "block" : "none";

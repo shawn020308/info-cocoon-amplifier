@@ -1678,25 +1678,6 @@ export function foldEl(
 </div>`
       : "";
 
-    // "clean" 模式：直接对原元素施加高斯模糊，不创建任何包装节点
-    if (style === "clean") {
-      const target = el as HTMLElement;
-      target.style.filter = "blur(6px)";
-      target.style.opacity = "0.35";
-      target.style.pointerEvents = "none";
-      target.style.userSelect = "none";
-      target.style.transition = "filter 0.3s ease, opacity 0.3s ease";
-      // 添加微弱的标记线，提示此处为已过滤评论
-      target.style.borderLeft = `2px solid ${COLOR.muted}33`;
-      target.style.paddingLeft = "6px";
-      // 同时隐藏已注入的举报/拉黑按钮
-      const btns = (el as any).__ruozhiBtns as HTMLElement[] | undefined;
-      if (btns) {
-        for (const btn of btns) btn.style.display = "none";
-      }
-      return true;
-    }
-
     const html = (() => {
       switch (style) {
         case "classic":
@@ -1716,6 +1697,14 @@ export function foldEl(
 <div style="margin-bottom:2px;font-size:10px;color:${COLOR.muted}">${esc(verdict.reason)}</div>
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
         }
+        case "clean":
+          return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
+  onmouseenter="this.style.opacity='0.8'" onmouseleave="this.style.opacity='1'"
+></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;font-family:${FONT}">
+<div style="filter:blur(6px);pointer-events:none;user-select:none;opacity:0.5;margin-bottom:6px">
+<div style="font-size:11px;color:${COLOR.secondary};margin-bottom:4px">AI 判定: <span style="font-weight:500">${esc(verdict.reason)}</span></div>
+<div style="color:${COLOR.text};white-space:pre-wrap;word-break:break-word;line-height:1.5">${esc(info.message)}</div>
+</div>${reportBtnsHTML}</div>`;
         default: // light
           return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
   onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
@@ -1731,6 +1720,14 @@ export function foldEl(
     el.parentNode?.insertBefore(foldElDiv, el);
     el.parentNode?.insertBefore(origElDiv, el);
     (el as HTMLElement).style.display = "none";
+
+    // clean 模式：隐藏原评论上的拉黑/举报按钮（它们在 fold wrapper 之外）
+    if (style === "clean") {
+      const btns = (el as any).__ruozhiBtns as HTMLElement[] | undefined;
+      if (btns) {
+        for (const btn of btns) btn.style.display = "none";
+      }
+    }
 
     foldElDiv.addEventListener("click", () => {
       const collapsed = origElDiv.style.display === "none";
