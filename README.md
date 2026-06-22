@@ -85,6 +85,18 @@ TypeScript · Vite · vite-plugin-monkey · IndexedDB (idb) · DeepSeek API
 
 ---
 
+
+
+## 贡献者
+
+感谢以下开发者对本项目的支持与贡献！：
+
+<a href="https://github.com/YifanHere">
+  <img src="https://github.com/YifanHere.png" width="50" height="50" style="border-radius:50%" alt="YifanHere"/>
+</a>
+
+---
+
 ## License
 
 MIT
