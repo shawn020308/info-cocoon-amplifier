@@ -15,8 +15,61 @@
 (function () {
   'use strict';
 
+  const PROVIDER_PRESETS = {
+    deepseek: {
+      label: "DeepSeek",
+      endpoint: "https://api.deepseek.com/chat/completions",
+      model: "deepseek-v4-flash",
+      needsAuth: true,
+      supportsJsonFormat: true
+    },
+    openai: {
+      label: "OpenAI",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      model: "gpt-4o-mini",
+      needsAuth: true,
+      supportsJsonFormat: true
+    },
+    openrouter: {
+      label: "OpenRouter",
+      endpoint: "https://openrouter.ai/api/v1/chat/completions",
+      model: "deepseek/deepseek-chat",
+      needsAuth: true,
+      supportsJsonFormat: true
+    },
+    groq: {
+      label: "Groq",
+      endpoint: "https://api.groq.com/openai/v1/chat/completions",
+      model: "llama-3.3-70b-versatile",
+      needsAuth: true,
+      supportsJsonFormat: true
+    },
+    ollama: {
+      label: "Ollama (本地)",
+      endpoint: "http://localhost:11434/v1/chat/completions",
+      model: "qwen2.5:7b",
+      needsAuth: false,
+      supportsJsonFormat: false
+    },
+    vllm: {
+      label: "vLLM (本地)",
+      endpoint: "http://localhost:8000/v1/chat/completions",
+      model: "qwen2.5-7b-instruct",
+      needsAuth: false,
+      supportsJsonFormat: false
+    },
+    custom: {
+      label: "自定义",
+      endpoint: "",
+      model: "",
+      needsAuth: true,
+      supportsJsonFormat: true
+    }
+  };
   const DEFAULT_CONFIG = {
+    provider: "deepseek",
     apiKey: "",
+    apiKeys: {},
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-v4-flash",
     theme: "github",
@@ -86,6 +139,12 @@
         if (parsed.fontScale === void 0) {
           parsed.fontScale = 1;
         }
+        if (!parsed.apiKeys || Object.keys(parsed.apiKeys).length === 0) {
+          parsed.apiKeys = {};
+          if (parsed.apiKey) {
+            parsed.apiKeys[parsed.provider || "deepseek"] = parsed.apiKey;
+          }
+        }
         const merged = { ...DEFAULT_CONFIG, ...parsed };
         setDevMode(merged.devMode);
         _config = merged;
@@ -95,6 +154,7 @@
       console.error("[ruozhi-filter]", "Config load failed:", e);
     }
     return {
+      provider: "deepseek",
       apiKey: "",
       apiEndpoint: "https://api.deepseek.com/chat/completions",
       model: "deepseek-v4-flash",
@@ -115,7 +175,10 @@
       learningCorrections: [],
       lastRefinedCount: 0,
       knowledgeBase: [],
-      fontScale: 1
+      fontScale: 1,
+      prefilterShort: false,
+      prefilterSymbols: false,
+      prefilterEnglish: false
     };
   }
   function refreshConfig(cfg) {
@@ -350,6 +413,54 @@ ${truncated.join("\n")}
     }
   }
   const TAG$6 = "[ruozhi-filter]";
+  function getPreset(config) {
+    return PROVIDER_PRESETS[config.provider] ?? PROVIDER_PRESETS.custom;
+  }
+  function skipAuth(config) {
+    const preset = getPreset(config);
+    if (!preset.needsAuth) return true;
+    if (!config.apiKey && (config.apiEndpoint.startsWith("http://localhost") || config.apiEndpoint.startsWith("http://127.0.0.1"))) {
+      return true;
+    }
+    return false;
+  }
+  function buildHeaders(config) {
+    const h = { "Content-Type": "application/json" };
+    if (!skipAuth(config)) {
+      h.Authorization = `Bearer ${config.apiKey}`;
+    }
+    return h;
+  }
+  function buildRefineBody(config, instruction) {
+    const preset = getPreset(config);
+    const body = {
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content: `你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。
+
+纠正记录说明：
+- "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）
+- "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）
+
+请严格按以下格式输出画像（300字以内）：
+应过滤：[用户明确不想看的内容，基于拉黑案例归纳]
+应放过：[用户想保留的内容，基于放过案例归纳]
+立场：[一句话概括用户倾向]
+
+仅输出JSON：{"refinedProfile":"..."}`
+        },
+        { role: "user", content: instruction }
+      ],
+      temperature: 0,
+      max_tokens: 512
+    };
+    if (preset.supportsJsonFormat) {
+      body.response_format = { type: "json_object" };
+    }
+    return body;
+  }
   function buildSystemPrompt(config, ctx) {
     const ctxParts = [`视频：${ctx.videoTitle}`];
     if (config.sendVideoDesc) {
@@ -389,48 +500,61 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     });
     return JSON.stringify(comments);
   }
+  function buildRequestBody(config, systemPrompt, userMessage, isRefining) {
+    const preset = getPreset(config);
+    const body = {
+      model: config.model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage }
+      ],
+      temperature: 0,
+      max_tokens: isRefining ? 8192 : 8192
+    };
+    if (preset.supportsJsonFormat) {
+      body.response_format = { type: "json_object" };
+    }
+    return body;
+  }
   async function batchJudge(config, replies, ctx) {
     var _a, _b, _c;
-    if (!config.apiKey || replies.length === 0) return { verdicts: [] };
+    if (!config.apiKey && getPreset(config).needsAuth || replies.length === 0)
+      return { verdicts: [] };
     const systemPrompt = buildSystemPrompt(config, ctx);
     const userMessage = buildUserMessage(config, replies);
     const isRefining = shouldRefineProfile();
     if (isRefining) {
       log(TAG$6, `触发画像更新 (评论判定附带)`);
     }
+    const reqBody = buildRequestBody(
+      config,
+      systemPrompt,
+      userMessage,
+      isRefining
+    );
     log(
       TAG$6,
       "请求体:",
       JSON.stringify({
-        model: config.model,
+        ...reqBody,
         systemPrompt: systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
-        userMessage: JSON.parse(userMessage),
-        temperature: 0.1,
-        max_tokens: isRefining ? 2560 : 2048,
-        response_format: { type: "json_object" },
-        isRefining
+        userMessage: JSON.parse(userMessage)
       })
     );
     const rpidByIndex = new Map(replies.map((r, i) => [i, r.rpid]));
     const fetchStart = Date.now();
     const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
     try {
+      const headers = {
+        "Content-Type": "application/json"
+      };
+      if (!skipAuth(config)) {
+        headers.Authorization = `Bearer ${config.apiKey}`;
+      }
       const response = await fetcher(config.apiEndpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage }
-          ],
-          temperature: 0,
-          max_tokens: isRefining ? 4096 : 2048,
-          response_format: { type: "json_object" }
-        })
+        headers,
+        body: JSON.stringify(reqBody)
       });
       log(TAG$6, `API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
       if (!response.ok) {
@@ -481,19 +605,22 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   async function testAPIConnection(config) {
     try {
       const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
-      const response = await fetcher(config.apiEndpoint, {
+      const hdrs = {
+        "Content-Type": "application/json"
+      };
+      if (!skipAuth(config)) {
+        hdrs.Authorization = `Bearer ${config.apiKey}`;
+      }
+      const resp = await fetcher(config.apiEndpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`
-        },
+        headers: hdrs,
         body: JSON.stringify({
           model: config.model,
           messages: [{ role: "user", content: "ping" }],
           max_tokens: 5
         })
       });
-      return response.ok;
+      return resp.ok;
     } catch {
       return false;
     }
@@ -511,7 +638,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       return;
     }
     const config = getConfig();
-    if (!config.apiKey) {
+    if (!config.apiKey && getPreset(config).needsAuth) {
       warn(TAG$6, " 画像更新跳过: 未配置API Key");
       return;
     }
@@ -540,23 +667,8 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     try {
       const response = await fetcher(config.apiEndpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            {
-              role: "system",
-              content: '你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。\n\n纠正记录说明：\n- "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）\n- "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）\n\n请严格按以下格式输出画像（${MAX_PROFILE_LENGTH}字以内）：\n应过滤：[用户明确不想看的内容，基于拉黑案例归纳]\n应放过：[用户想保留的内容，基于放过案例归纳]\n立场：[一句话概括用户倾向]\n\n仅输出JSON：{"refinedProfile":"..."}'
-            },
-            { role: "user", content: instruction }
-          ],
-          temperature: 0,
-          max_tokens: 512,
-          response_format: { type: "json_object" }
-        })
+        headers: buildHeaders(config),
+        body: JSON.stringify(buildRefineBody(config, instruction))
       });
       if (!response.ok) {
         console.error(TAG$6, `Profile update API error ${response.status}`);
@@ -1404,7 +1516,11 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     "已关注",
     "复制评论链接",
     "加入黑名单",
-    "记笔记"
+    "记笔记",
+    // UP主可见的操作按钮文本（不应混入评论内容发送给AI）
+    "设为置顶",
+    "删除",
+    "设置屏蔽词"
   ]);
   function isUIText(s) {
     if (/^(\d+|[\d.]+[万亿]?|\d+:\d+|\d+楼|#\d+)$/.test(s)) return true;
@@ -1429,7 +1545,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
           ).toLowerCase();
           if (cls.includes("sub-reply") || cls.includes("reply-item") || cls.includes("fan") || cls.includes("medal") || tag2.includes("-reply") || tag2.includes("-replies"))
             continue;
-          if (cls.includes("report") || cls.includes("operation") || cls.includes("btn") || cls.includes("action") || tag2 === "button")
+          if (cls.includes("report") || cls.includes("operation") || cls.includes("btn") || cls.includes("action") || cls.includes("pin") || cls.includes("shield") || cls.includes("up-") || tag2 === "button")
             continue;
           if (el2.shadowRoot) {
             text += deepInnerText(el2.shadowRoot) + "\n";
@@ -2259,6 +2375,12 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         if (parsed.fontScale === void 0) {
           parsed.fontScale = 1;
         }
+        if (!parsed.apiKeys || Object.keys(parsed.apiKeys).length === 0) {
+          parsed.apiKeys = {};
+          if (parsed.apiKey) {
+            parsed.apiKeys[parsed.provider || "deepseek"] = parsed.apiKey;
+          }
+        }
         return { ...DEFAULT_CONFIG, ...parsed };
       }
     } catch {
@@ -2428,8 +2550,18 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- API 设置卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🔑 API 配置</div>
+      <div style="${secLabel}">API 配置</div>
       <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">AI 提供商</div>
+        <select id="ruozhi-provider" style="${is}">
+          ${Object.keys(PROVIDER_PRESETS).map((k) => `<option value="${k}" ${sel(k, config.provider)} style="${opt}">${PROVIDER_PRESETS[k].label}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:10px" id="ruozhi-model-row">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">模型</div>
+        <input id="ruozhi-model" type="text" value="${escapeAttr(config.model)}" placeholder="如 deepseek-v4-flash" style="${is}">
+      </div>
+      <div style="margin-bottom:10px" id="ruozhi-apikey-row">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">API Key</div>
         <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}" placeholder="sk-xxxxxxxx" style="${is}">
       </div>
@@ -2449,7 +2581,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- 过滤规则 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">📋 过滤规则</div>
+      <div style="${secLabel}">过滤规则</div>
       <div style="margin-bottom:8px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">Prompt 指令</div>
         <textarea id="ruozhi-prompt" rows="5" style="${is};resize:vertical;line-height:1.5">${esc(config.prompt)}</textarea>
@@ -2468,13 +2600,13 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- 外观卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🎨 外观</div>
+      <div style="${secLabel}">外观</div>
       <div style="margin-bottom:10px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">UI 主题</div>
         <select id="ruozhi-theme" style="${is}">
-          <option value="github" ${sel(config.theme, "github")} style="${opt}">🐙 GitHub — 清晰锐利</option>
-          <option value="claude" ${sel(config.theme, "claude")} style="${opt}">🧡 Claude — 温润橙调</option>
-          <option value="dark" ${sel(config.theme, "dark")} style="${opt}">🌙 Dark Modern — 现代暗色</option>
+          <option value="github" ${sel(config.theme, "github")} style="${opt}">GitHub — 清晰锐利</option>
+          <option value="claude" ${sel(config.theme, "claude")} style="${opt}">Claude — 温润橙调</option>
+          <option value="dark" ${sel(config.theme, "dark")} style="${opt}">Dark Modern — 现代暗色</option>
         </select>
       </div>
       <div>
@@ -2490,7 +2622,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- 过滤选项卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">⚙️ 过滤选项</div>
+      <div style="${secLabel}">过滤选项</div>
       <div style="margin-bottom:8px">
         <label style="${chkRow}">
           <input id="ruozhi-enable-ai" type="checkbox" ${cb(config.enableAI)} style="accent-color:${COLOR.accent}">
@@ -2520,7 +2652,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- 请求内容卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">📡 请求内容控制</div>
+      <div style="${secLabel}">请求内容控制</div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-uname" type="checkbox" ${cb(config.sendUname)} style="accent-color:${COLOR.accent}">附带用户名</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-mid" type="checkbox" ${cb(config.sendMid)} style="accent-color:${COLOR.accent}">附带用户 ID</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-videodesc" type="checkbox" ${cb(config.sendVideoDesc)} style="accent-color:${COLOR.accent}">附带视频简介</label></div>
@@ -2534,7 +2666,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 
     <!-- 预过滤卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🔍 预过滤 (节省Token)</div>
+      <div style="${secLabel}">预过滤 (节省Token)</div>
       <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">开启后，匹配的评论不再发送给 AI 判定。全部关闭则不预过滤。</div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
@@ -2575,7 +2707,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   <div id="ruozhi-tab-learning" style="display:none;overflow-y:auto;flex:1;padding:16px 20px">
     <!-- 语境知识库（置顶） -->
     <div id="ruozhi-kb-panel" style="display:none;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:600;color:${COLOR.secondary};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">📚 语境知识库</div>
+      <div style="font-size:11px;font-weight:600;color:${COLOR.secondary};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">语境知识库</div>
       <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">添加语境知识，辅助 AI 判断反讽、引用或特定称呼，避免误伤。</div>
       <div style="margin-bottom:10px;display:flex;gap:6px">
         <input id="ruozhi-kb-input" type="text" placeholder="例如：XX 是对 XX 的歧视性称呼"
@@ -2596,7 +2728,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 </div>`;
   }
   function bindPanelEvents(root, config, onConfigChange) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
     const tabs = root.querySelectorAll(".ruozhi-tab");
     (_a = root.querySelector("#ruozhi-panel-close")) == null ? void 0 : _a.addEventListener("click", () => {
       if (panelRoot) {
@@ -2647,7 +2779,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       });
     });
     (_b = root.querySelector("#ruozhi-save")) == null ? void 0 : _b.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l, _m, _n, _o, _p, _q, _r;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n, _o, _p, _q, _r, _s, _t, _u, _v;
       let storedConfig = {};
       try {
         storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
@@ -2660,27 +2792,35 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         lastRefinedCount: storedConfig.lastRefinedCount ?? config.lastRefinedCount ?? 0,
         knowledgeBase: storedConfig.knowledgeBase ?? config.knowledgeBase ?? [],
         theme: ((_a2 = root.querySelector("#ruozhi-theme")) == null ? void 0 : _a2.value) ?? "github",
-        apiKey: ((_b2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _b2.value) ?? "",
-        apiEndpoint: ((_c2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _c2.value) ?? config.apiEndpoint,
-        prompt: ((_d2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _d2.value) ?? config.prompt,
-        enableAI: ((_e2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _e2.checked) ?? true,
-        foldMode: ((_f2 = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _f2.value) ?? "classic",
-        enableBlacklist: ((_g2 = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _g2.checked) ?? true,
-        blacklistConfirm: ((_h2 = root.querySelector("#ruozhi-bl-confirm")) == null ? void 0 : _h2.checked) ?? true,
-        devMode: ((_i2 = root.querySelector("#ruozhi-dev-mode")) == null ? void 0 : _i2.checked) ?? false,
+        provider: ((_b2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _b2.value) ?? "deepseek",
+        model: ((_c2 = root.querySelector("#ruozhi-model")) == null ? void 0 : _c2.value) ?? config.model,
+        apiKey: ((_d2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _d2.value) ?? "",
+        // 按提供商分别记忆密钥
+        apiKeys: {
+          ...config.apiKeys ?? {},
+          ...storedConfig.apiKeys ?? {},
+          [((_e2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _e2.value) ?? "deepseek"]: ((_f2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _f2.value) ?? ""
+        },
+        apiEndpoint: ((_g2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _g2.value) ?? config.apiEndpoint,
+        prompt: ((_h2 = root.querySelector("#ruozhi-prompt")) == null ? void 0 : _h2.value) ?? config.prompt,
+        enableAI: ((_i2 = root.querySelector("#ruozhi-enable-ai")) == null ? void 0 : _i2.checked) ?? true,
+        foldMode: ((_j2 = root.querySelector("#ruozhi-fold-mode")) == null ? void 0 : _j2.value) ?? "classic",
+        enableBlacklist: ((_k2 = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _k2.checked) ?? true,
+        blacklistConfirm: ((_l2 = root.querySelector("#ruozhi-bl-confirm")) == null ? void 0 : _l2.checked) ?? true,
+        devMode: ((_m2 = root.querySelector("#ruozhi-dev-mode")) == null ? void 0 : _m2.checked) ?? false,
         pricePerMToken: parseFloat(
-          ((_j2 = root.querySelector("#ruozhi-price")) == null ? void 0 : _j2.value) || "1.1"
+          ((_n = root.querySelector("#ruozhi-price")) == null ? void 0 : _n.value) || "1.1"
         ) || 1.1,
-        sendUname: ((_k2 = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _k2.checked) ?? false,
-        sendMid: ((_l = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _l.checked) ?? false,
-        sendVideoDesc: ((_m = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _m.checked) ?? false,
-        learningEnabled: ((_n = root.querySelector("#ruozhi-learning")) == null ? void 0 : _n.checked) ?? true,
+        sendUname: ((_o = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _o.checked) ?? false,
+        sendMid: ((_p = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _p.checked) ?? false,
+        sendVideoDesc: ((_q = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _q.checked) ?? false,
+        learningEnabled: ((_r = root.querySelector("#ruozhi-learning")) == null ? void 0 : _r.checked) ?? true,
         fontScale: parseFloat(
-          ((_o = root.querySelector("#ruozhi-font-scale-label")) == null ? void 0 : _o.textContent) ?? "1.0"
+          ((_s = root.querySelector("#ruozhi-font-scale-label")) == null ? void 0 : _s.textContent) ?? "1.0"
         ) || 1,
-        prefilterShort: ((_p = root.querySelector("#ruozhi-prefilter-short")) == null ? void 0 : _p.checked) ?? false,
-        prefilterSymbols: ((_q = root.querySelector("#ruozhi-prefilter-symbols")) == null ? void 0 : _q.checked) ?? false,
-        prefilterEnglish: ((_r = root.querySelector("#ruozhi-prefilter-english")) == null ? void 0 : _r.checked) ?? false
+        prefilterShort: ((_t = root.querySelector("#ruozhi-prefilter-short")) == null ? void 0 : _t.checked) ?? false,
+        prefilterSymbols: ((_u = root.querySelector("#ruozhi-prefilter-symbols")) == null ? void 0 : _u.checked) ?? false,
+        prefilterEnglish: ((_v = root.querySelector("#ruozhi-prefilter-english")) == null ? void 0 : _v.checked) ?? false
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -2694,11 +2834,43 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       );
       if (confirmRow) confirmRow.style.display = checked ? "" : "none";
     });
-    (_d = root.querySelector("#ruozhi-test")) == null ? void 0 : _d.addEventListener("click", async () => {
+    (_d = root.querySelector("#ruozhi-provider")) == null ? void 0 : _d.addEventListener("change", () => {
       var _a2;
-      const apiKey = (_a2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _a2.value;
+      const val = (_a2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _a2.value;
+      if (!val) return;
+      const preset = PROVIDER_PRESETS[val];
+      const endpointEl = root.querySelector(
+        "#ruozhi-endpoint"
+      );
+      const modelEl = root.querySelector("#ruozhi-model");
+      const apiKeyEl = root.querySelector("#ruozhi-apikey");
+      const apiKeyRow = root.querySelector("#ruozhi-apikey-row");
+      if (endpointEl && preset.endpoint) endpointEl.value = preset.endpoint;
+      if (modelEl && preset.model) modelEl.value = preset.model;
+      if (apiKeyEl) {
+        apiKeyEl.value = config.apiKeys[val] ?? "";
+      }
+      if (apiKeyRow) {
+        apiKeyRow.style.display = preset.needsAuth ? "" : "none";
+      }
+    });
+    const initProvider = (_e = root.querySelector("#ruozhi-provider")) == null ? void 0 : _e.value;
+    if (initProvider) {
+      const preset = PROVIDER_PRESETS[initProvider];
+      const apiKeyRow = root.querySelector("#ruozhi-apikey-row");
+      if (apiKeyRow && !preset.needsAuth) {
+        apiKeyRow.style.display = "none";
+      }
+    }
+    (_f = root.querySelector("#ruozhi-test")) == null ? void 0 : _f.addEventListener("click", async () => {
+      var _a2, _b2, _c2, _d2, _e2;
+      const provider = (_a2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _a2.value;
+      const needsAuth = ((_b2 = PROVIDER_PRESETS[provider]) == null ? void 0 : _b2.needsAuth) ?? true;
+      const apiKey = (_c2 = root.querySelector("#ruozhi-apikey")) == null ? void 0 : _c2.value;
+      const apiEndpoint = ((_d2 = root.querySelector("#ruozhi-endpoint")) == null ? void 0 : _d2.value) ?? config.apiEndpoint;
+      const model = ((_e2 = root.querySelector("#ruozhi-model")) == null ? void 0 : _e2.value) ?? config.model;
       const testStatus = root.querySelector("#ruozhi-test-status");
-      if (!apiKey) {
+      if (needsAuth && !apiKey) {
         if (testStatus) {
           testStatus.textContent = "请先填写 API Key";
           testStatus.style.color = COLOR.amber;
@@ -2709,17 +2881,22 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         testStatus.textContent = "测试中…";
         testStatus.style.color = COLOR.secondary;
       }
-      const ok = await testAPIConnection({ ...config, apiKey });
+      const ok = await testAPIConnection({
+        ...config,
+        apiKey,
+        apiEndpoint,
+        model
+      });
       if (testStatus) {
-        testStatus.textContent = ok ? "✓ 连接成功" : "✗ 连接失败";
+        testStatus.textContent = ok ? "连接成功" : "连接失败";
         testStatus.style.color = ok ? COLOR.green : COLOR.red;
       }
     });
-    (_e = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _e.addEventListener("click", async () => {
+    (_g = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _g.addEventListener("click", async () => {
       await clearCache();
       showPanelStatus(root, "缓存已清除", COLOR.green);
     });
-    (_f = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _f.addEventListener("click", async () => {
+    (_h = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _h.addEventListener("click", async () => {
       if (!confirm("确定清空所有黑名单记录？此操作不可撤销。")) return;
       await clearBlacklist();
       _blCache = null;
@@ -2728,7 +2905,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (blContent)
         blContent.innerHTML = `<div style="padding:24px;text-align:center;color:${COLOR.muted}">暂无黑名单记录</div>`;
     });
-    (_g = root.querySelector("#ruozhi-clear-learning")) == null ? void 0 : _g.addEventListener("click", () => {
+    (_i = root.querySelector("#ruozhi-clear-learning")) == null ? void 0 : _i.addEventListener("click", () => {
       if (!confirm("确定清除所有学习记录？此操作不可撤销。")) return;
       clearLearning();
       showPanelStatus(root, "学习记录已清除", COLOR.green);
@@ -2741,7 +2918,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       updateStatsPanel();
       showPanelStatus(root, "统计已重置", COLOR.green);
     });
-    (_h = root.querySelector("#ruozhi-theme")) == null ? void 0 : _h.addEventListener("change", () => {
+    (_j = root.querySelector("#ruozhi-theme")) == null ? void 0 : _j.addEventListener("change", () => {
       var _a2;
       const themeName = (_a2 = root.querySelector("#ruozhi-theme")) == null ? void 0 : _a2.value;
       if (!themeName) return;
@@ -2768,15 +2945,15 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (panelRoot) panelRoot.style.zoom = String(clamped);
       if (fabContainer) fabContainer.style.zoom = String(clamped);
     }
-    (_i = root.querySelector("#ruozhi-font-down")) == null ? void 0 : _i.addEventListener("click", () => {
+    (_k = root.querySelector("#ruozhi-font-down")) == null ? void 0 : _k.addEventListener("click", () => {
       const cur = parseFloat((fontLabel == null ? void 0 : fontLabel.textContent) ?? "1.0");
       applyFontScale(cur - 0.1);
     });
-    (_j = root.querySelector("#ruozhi-font-up")) == null ? void 0 : _j.addEventListener("click", () => {
+    (_l = root.querySelector("#ruozhi-font-up")) == null ? void 0 : _l.addEventListener("click", () => {
       const cur = parseFloat((fontLabel == null ? void 0 : fontLabel.textContent) ?? "1.0");
       applyFontScale(cur + 0.1);
     });
-    (_k = root.querySelector("#ruozhi-font-reset")) == null ? void 0 : _k.addEventListener("click", () => {
+    (_m = root.querySelector("#ruozhi-font-reset")) == null ? void 0 : _m.addEventListener("click", () => {
       applyFontScale(1);
     });
   }
@@ -3395,7 +3572,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   }
   function rptBtnDone() {
     return {
-      ...blBtnDone(),
       color: COLOR.green,
       borderColor: COLOR.greenBg,
       background: COLOR.greenBg

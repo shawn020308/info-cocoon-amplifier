@@ -1,10 +1,6 @@
 // ============================================================
-// api.ts - DeepSeek API 通信层
-//
-// TODO: 加入对本地大模型的支持 (Ollama / vLLM / LocalAI)
-// - apiEndpoint 支持 http://localhost:11434 等本地地址
-// - 可选跳过 Authorization header
-// - 兼容非 OpenAI 格式的 response_format
+// api.ts - 多 AI 提供商通信层
+// 支持: DeepSeek / OpenAI / OpenRouter / Groq / Ollama / vLLM / 自定义
 // ============================================================
 import type {
   FilterConfig,
@@ -13,6 +9,7 @@ import type {
   AIBatchResult,
   ReplyContext,
 } from "./types";
+import { PROVIDER_PRESETS } from "./types";
 import { getConfig } from "./config";
 import { log, warn } from "./debug";
 import {
@@ -23,6 +20,70 @@ import {
 } from "./learning";
 
 const TAG = "[ruozhi-filter]";
+
+/** 根据配置判断是否为本地提供商（不需要 auth + 可能不支持 json_object） */
+function getPreset(config: FilterConfig) {
+  return PROVIDER_PRESETS[config.provider] ?? PROVIDER_PRESETS.custom;
+}
+
+/** 是否跳过 Authorization header */
+function skipAuth(config: FilterConfig): boolean {
+  const preset = getPreset(config);
+  if (!preset.needsAuth) return true;
+  // 本地地址且 apiKey 为空也跳过
+  if (
+    !config.apiKey &&
+    (config.apiEndpoint.startsWith("http://localhost") ||
+      config.apiEndpoint.startsWith("http://127.0.0.1"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 构建请求头（根据提供商自动决定是否加 Authorization） */
+function buildHeaders(config: FilterConfig): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (!skipAuth(config)) {
+    h.Authorization = `Bearer ${config.apiKey}`;
+  }
+  return h;
+}
+
+/** 构建画像更新的请求体 */
+function buildRefineBody(
+  config: FilterConfig,
+  instruction: string,
+): Record<string, unknown> {
+  const preset = getPreset(config);
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages: [
+      {
+        role: "system",
+        content: `你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。
+
+纠正记录说明：
+- "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）
+- "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）
+
+请严格按以下格式输出画像（300字以内）：
+应过滤：[用户明确不想看的内容，基于拉黑案例归纳]
+应放过：[用户想保留的内容，基于放过案例归纳]
+立场：[一句话概括用户倾向]
+
+仅输出JSON：{"refinedProfile":"..."}`,
+      },
+      { role: "user", content: instruction },
+    ],
+    temperature: 0,
+    max_tokens: 512,
+  };
+  if (preset.supportsJsonFormat) {
+    body.response_format = { type: "json_object" };
+  }
+  return body;
+}
 
 function buildSystemPrompt(config: FilterConfig, ctx: ReplyContext): string {
   const ctxParts: string[] = [`视频：${ctx.videoTitle}`];
@@ -74,13 +135,39 @@ function buildUserMessage(config: FilterConfig, replies: BiliReply[]): string {
   return JSON.stringify(comments);
 }
 
-/** 调用 DeepSeek API 批量判定 */
+/** 构建请求体：根据提供商差异调整参数 */
+function buildRequestBody(
+  config: FilterConfig,
+  systemPrompt: string,
+  userMessage: string,
+  isRefining: boolean,
+): Record<string, unknown> {
+  const preset = getPreset(config);
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    temperature: 0,
+    max_tokens: isRefining ? 8192 : 8192,
+  };
+  // 本地模型 (Ollama/vLLM) 可能不支持 json_object 格式约束
+  // 但 System Prompt 已明确要求输出 JSON，去掉此参数不影响效果
+  if (preset.supportsJsonFormat) {
+    body.response_format = { type: "json_object" };
+  }
+  return body;
+}
+
+/** 调用 AI API 批量判定 */
 export async function batchJudge(
   config: FilterConfig,
   replies: BiliReply[],
   ctx: ReplyContext,
 ): Promise<AIBatchResult> {
-  if (!config.apiKey || replies.length === 0) return { verdicts: [] };
+  if ((!config.apiKey && getPreset(config).needsAuth) || replies.length === 0)
+    return { verdicts: [] };
 
   const systemPrompt = buildSystemPrompt(config, ctx);
   const userMessage = buildUserMessage(config, replies);
@@ -90,18 +177,20 @@ export async function batchJudge(
     log(TAG, `触发画像更新 (评论判定附带)`);
   }
 
+  const reqBody = buildRequestBody(
+    config,
+    systemPrompt,
+    userMessage,
+    isRefining,
+  );
   log(
     TAG,
     "请求体:",
     JSON.stringify({
-      model: config.model,
+      ...reqBody,
       systemPrompt:
         systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
       userMessage: JSON.parse(userMessage),
-      temperature: 0.1,
-      max_tokens: isRefining ? 2560 : 2048,
-      response_format: { type: "json_object" },
-      isRefining,
     }),
   );
 
@@ -115,22 +204,17 @@ export async function batchJudge(
   ) as typeof fetch;
 
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (!skipAuth(config)) {
+      headers.Authorization = `Bearer ${config.apiKey}`;
+    }
+
     const response = await fetcher(config.apiEndpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        temperature: 0,
-        max_tokens: isRefining ? 4096 : 2048,
-        response_format: { type: "json_object" },
-      }),
+      headers,
+      body: JSON.stringify(reqBody),
     });
 
     log(TAG, `API HTTP ${response.status}, ${Date.now() - fetchStart}ms`);
@@ -197,19 +281,22 @@ export async function testAPIConnection(
     const fetcher: typeof fetch = (
       typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
     ) as typeof fetch;
-    const response = await fetcher(config.apiEndpoint, {
+    const hdrs: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (!skipAuth(config)) {
+      hdrs.Authorization = `Bearer ${config.apiKey}`;
+    }
+    const resp = await fetcher(config.apiEndpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
+      headers: hdrs,
       body: JSON.stringify({
         model: config.model,
         messages: [{ role: "user", content: "ping" }],
         max_tokens: 5,
       }),
     });
-    return response.ok;
+    return resp.ok;
   } catch {
     return false;
   }
@@ -235,7 +322,7 @@ async function _refineProfile(force: boolean): Promise<void> {
   }
 
   const config = getConfig();
-  if (!config.apiKey) {
+  if (!config.apiKey && getPreset(config).needsAuth) {
     warn(TAG, " 画像更新跳过: 未配置API Key");
     return;
   }
@@ -275,24 +362,8 @@ async function _refineProfile(force: boolean): Promise<void> {
   try {
     const response = await fetcher(config.apiEndpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              '你是用户过滤画像维护助手。根据用户对AI判定的纠正记录，输出精炼的过滤画像。\n\n纠正记录说明：\n- "放过" = 用户将AI误判的内容恢复了（用户认为这些不该被过滤）\n- "拉黑" = 用户手动拉黑了AI漏判的内容（用户认为这些应该被过滤）\n\n请严格按以下格式输出画像（${MAX_PROFILE_LENGTH}字以内）：\n应过滤：[用户明确不想看的内容，基于拉黑案例归纳]\n应放过：[用户想保留的内容，基于放过案例归纳]\n立场：[一句话概括用户倾向]\n\n仅输出JSON：{"refinedProfile":"..."}',
-          },
-          { role: "user", content: instruction },
-        ],
-        temperature: 0,
-        max_tokens: 512,
-        response_format: { type: "json_object" },
-      }),
+      headers: buildHeaders(config),
+      body: JSON.stringify(buildRefineBody(config, instruction)),
     });
 
     if (!response.ok) {

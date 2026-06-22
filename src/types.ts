@@ -67,9 +67,86 @@ export interface LearningCorrection {
 /** 主题名称 */
 export type ThemeName = "claude" | "github" | "dark";
 
+/** AI 提供商名称 */
+export type ProviderName =
+  | "deepseek"
+  | "openai"
+  | "openrouter"
+  | "groq"
+  | "ollama"
+  | "vllm"
+  | "custom";
+
+/** 提供商预设：一键填入 endpoint + model */
+export interface ProviderPreset {
+  label: string;
+  endpoint: string;
+  model: string;
+  /** 是否需要 Authorization header */
+  needsAuth: boolean;
+  /** 是否支持 response_format: json_object */
+  supportsJsonFormat: boolean;
+}
+
+export const PROVIDER_PRESETS: Record<ProviderName, ProviderPreset> = {
+  deepseek: {
+    label: "DeepSeek",
+    endpoint: "https://api.deepseek.com/chat/completions",
+    model: "deepseek-v4-flash",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+  openai: {
+    label: "OpenAI",
+    endpoint: "https://api.openai.com/v1/chat/completions",
+    model: "gpt-4o-mini",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+  openrouter: {
+    label: "OpenRouter",
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    model: "deepseek/deepseek-chat",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+  groq: {
+    label: "Groq",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.3-70b-versatile",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+  ollama: {
+    label: "Ollama (本地)",
+    endpoint: "http://localhost:11434/v1/chat/completions",
+    model: "qwen2.5:7b",
+    needsAuth: false,
+    supportsJsonFormat: false,
+  },
+  vllm: {
+    label: "vLLM (本地)",
+    endpoint: "http://localhost:8000/v1/chat/completions",
+    model: "qwen2.5-7b-instruct",
+    needsAuth: false,
+    supportsJsonFormat: false,
+  },
+  custom: {
+    label: "自定义",
+    endpoint: "",
+    model: "",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+};
+
 /** 用户自定义过滤规则 */
 export interface FilterConfig {
+  /** AI 提供商 */
+  provider: ProviderName;
   apiKey: string;
+  /** 按提供商分别记忆的密钥，切换时自动回填 */
+  apiKeys: Partial<Record<ProviderName, string>>;
   apiEndpoint: string;
   model: string;
   prompt: string;
@@ -181,7 +258,9 @@ export interface ReplyContext {
 
 /** 默认配置 */
 export const DEFAULT_CONFIG: FilterConfig = {
+  provider: "deepseek",
   apiKey: "",
+  apiKeys: {},
   apiEndpoint: "https://api.deepseek.com/chat/completions",
   model: "deepseek-v4-flash",
   theme: "github",

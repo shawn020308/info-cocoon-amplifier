@@ -5,9 +5,14 @@
 // 包含：FAB · 面板 · Toast · 评论折叠 · 拉黑按钮
 // ============================================================
 
-import type { FilterConfig, AccumulatedStats, BlacklistRecord } from "./types";
+import type {
+  FilterConfig,
+  AccumulatedStats,
+  BlacklistRecord,
+  ProviderName,
+} from "./types";
 import type { PendingComment } from "./comment-extractor";
-import { DEFAULT_CONFIG } from "./types";
+import { DEFAULT_CONFIG, PROVIDER_PRESETS } from "./types";
 import { testAPIConnection, forceRefineProfile } from "./api";
 import {
   getAllBlacklist,
@@ -435,6 +440,13 @@ export function loadConfig(): FilterConfig {
       if (parsed.fontScale === undefined) {
         parsed.fontScale = 1.0;
       }
+      // 迁移：旧版无 apiKeys，将旧 apiKey 存入当前 provider 的槽位
+      if (!parsed.apiKeys || Object.keys(parsed.apiKeys).length === 0) {
+        parsed.apiKeys = {};
+        if (parsed.apiKey) {
+          parsed.apiKeys[parsed.provider || "deepseek"] = parsed.apiKey;
+        }
+      }
       return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch {
@@ -647,8 +659,18 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- API 设置卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🔑 API 配置</div>
+      <div style="${secLabel}">API 配置</div>
       <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">AI 提供商</div>
+        <select id="ruozhi-provider" style="${is}">
+          ${(Object.keys(PROVIDER_PRESETS) as ProviderName[]).map((k) => `<option value="${k}" ${sel(k, config.provider)} style="${opt}">${PROVIDER_PRESETS[k].label}</option>`).join("")}
+        </select>
+      </div>
+      <div style="margin-bottom:10px" id="ruozhi-model-row">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">模型</div>
+        <input id="ruozhi-model" type="text" value="${escapeAttr(config.model)}" placeholder="如 deepseek-v4-flash" style="${is}">
+      </div>
+      <div style="margin-bottom:10px" id="ruozhi-apikey-row">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">API Key</div>
         <input id="ruozhi-apikey" type="password" value="${escapeAttr(config.apiKey)}" placeholder="sk-xxxxxxxx" style="${is}">
       </div>
@@ -668,7 +690,7 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- 过滤规则 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">📋 过滤规则</div>
+      <div style="${secLabel}">过滤规则</div>
       <div style="margin-bottom:8px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">Prompt 指令</div>
         <textarea id="ruozhi-prompt" rows="5" style="${is};resize:vertical;line-height:1.5">${esc(config.prompt)}</textarea>
@@ -687,13 +709,13 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- 外观卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🎨 外观</div>
+      <div style="${secLabel}">外观</div>
       <div style="margin-bottom:10px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">UI 主题</div>
         <select id="ruozhi-theme" style="${is}">
-          <option value="github" ${sel(config.theme, "github")} style="${opt}">🐙 GitHub — 清晰锐利</option>
-          <option value="claude" ${sel(config.theme, "claude")} style="${opt}">🧡 Claude — 温润橙调</option>
-          <option value="dark" ${sel(config.theme, "dark")} style="${opt}">🌙 Dark Modern — 现代暗色</option>
+          <option value="github" ${sel(config.theme, "github")} style="${opt}">GitHub — 清晰锐利</option>
+          <option value="claude" ${sel(config.theme, "claude")} style="${opt}">Claude — 温润橙调</option>
+          <option value="dark" ${sel(config.theme, "dark")} style="${opt}">Dark Modern — 现代暗色</option>
         </select>
       </div>
       <div>
@@ -709,7 +731,7 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- 过滤选项卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">⚙️ 过滤选项</div>
+      <div style="${secLabel}">过滤选项</div>
       <div style="margin-bottom:8px">
         <label style="${chkRow}">
           <input id="ruozhi-enable-ai" type="checkbox" ${cb(config.enableAI)} style="accent-color:${COLOR.accent}">
@@ -739,7 +761,7 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- 请求内容卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">📡 请求内容控制</div>
+      <div style="${secLabel}">请求内容控制</div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-uname" type="checkbox" ${cb(config.sendUname)} style="accent-color:${COLOR.accent}">附带用户名</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-mid" type="checkbox" ${cb(config.sendMid)} style="accent-color:${COLOR.accent}">附带用户 ID</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-send-videodesc" type="checkbox" ${cb(config.sendVideoDesc)} style="accent-color:${COLOR.accent}">附带视频简介</label></div>
@@ -753,7 +775,7 @@ function buildPanelHTML(config: FilterConfig): string {
 
     <!-- 预过滤卡片 -->
     <div style="${cardStyle}">
-      <div style="${secLabel}">🔍 预过滤 (节省Token)</div>
+      <div style="${secLabel}">预过滤 (节省Token)</div>
       <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">开启后，匹配的评论不再发送给 AI 判定。全部关闭则不预过滤。</div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
@@ -794,7 +816,7 @@ function buildPanelHTML(config: FilterConfig): string {
   <div id="ruozhi-tab-learning" style="display:none;overflow-y:auto;flex:1;padding:16px 20px">
     <!-- 语境知识库（置顶） -->
     <div id="ruozhi-kb-panel" style="display:none;margin-bottom:16px">
-      <div style="font-size:11px;font-weight:600;color:${COLOR.secondary};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">📚 语境知识库</div>
+      <div style="font-size:11px;font-weight:600;color:${COLOR.secondary};margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">语境知识库</div>
       <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">添加语境知识，辅助 AI 判断反讽、引用或特定称呼，避免误伤。</div>
       <div style="margin-bottom:10px;display:flex;gap:6px">
         <input id="ruozhi-kb-input" type="text" placeholder="例如：XX 是对 XX 的歧视性称呼"
@@ -904,8 +926,23 @@ function bindPanelEvents(
       theme:
         ((root.querySelector("#ruozhi-theme") as HTMLSelectElement)
           ?.value as ThemeName) ?? "github",
+      provider:
+        ((root.querySelector("#ruozhi-provider") as HTMLSelectElement)
+          ?.value as ProviderName) ?? "deepseek",
+      model:
+        (root.querySelector("#ruozhi-model") as HTMLInputElement)?.value ??
+        config.model,
       apiKey:
         (root.querySelector("#ruozhi-apikey") as HTMLInputElement)?.value ?? "",
+      // 按提供商分别记忆密钥
+      apiKeys: {
+        ...(config.apiKeys ?? {}),
+        ...(storedConfig.apiKeys ?? {}),
+        [((root.querySelector("#ruozhi-provider") as HTMLSelectElement)
+          ?.value as ProviderName) ?? "deepseek"]:
+          (root.querySelector("#ruozhi-apikey") as HTMLInputElement)?.value ??
+          "",
+      },
       apiEndpoint:
         (root.querySelector("#ruozhi-endpoint") as HTMLInputElement)?.value ??
         config.apiEndpoint,
@@ -975,12 +1012,57 @@ function bindPanelEvents(
     if (confirmRow) confirmRow.style.display = checked ? "" : "none";
   });
 
+  // 提供商切换：自动填入 endpoint + model + key，并控制 API Key 行显隐
+  root.querySelector("#ruozhi-provider")?.addEventListener("change", () => {
+    const val = (root.querySelector("#ruozhi-provider") as HTMLSelectElement)
+      ?.value as ProviderName;
+    if (!val) return;
+    const preset = PROVIDER_PRESETS[val];
+    const endpointEl = root.querySelector(
+      "#ruozhi-endpoint",
+    ) as HTMLInputElement;
+    const modelEl = root.querySelector("#ruozhi-model") as HTMLInputElement;
+    const apiKeyEl = root.querySelector("#ruozhi-apikey") as HTMLInputElement;
+    const apiKeyRow = root.querySelector("#ruozhi-apikey-row") as HTMLElement;
+    if (endpointEl && preset.endpoint) endpointEl.value = preset.endpoint;
+    if (modelEl && preset.model) modelEl.value = preset.model;
+    // 回填该提供商上次保存的密钥
+    if (apiKeyEl) {
+      apiKeyEl.value = config.apiKeys[val] ?? "";
+    }
+    if (apiKeyRow) {
+      apiKeyRow.style.display = preset.needsAuth ? "" : "none";
+    }
+  });
+
+  // 初始同步：根据当前 provider 控制 API Key 行显隐
+  const initProvider = (
+    root.querySelector("#ruozhi-provider") as HTMLSelectElement
+  )?.value as ProviderName;
+  if (initProvider) {
+    const preset = PROVIDER_PRESETS[initProvider];
+    const apiKeyRow = root.querySelector("#ruozhi-apikey-row") as HTMLElement;
+    if (apiKeyRow && !preset.needsAuth) {
+      apiKeyRow.style.display = "none";
+    }
+  }
+
   // 测试连接
   root.querySelector("#ruozhi-test")?.addEventListener("click", async () => {
+    const provider = (
+      root.querySelector("#ruozhi-provider") as HTMLSelectElement
+    )?.value as ProviderName;
+    const needsAuth = PROVIDER_PRESETS[provider]?.needsAuth ?? true;
     const apiKey = (root.querySelector("#ruozhi-apikey") as HTMLInputElement)
       ?.value;
+    const apiEndpoint =
+      (root.querySelector("#ruozhi-endpoint") as HTMLInputElement)?.value ??
+      config.apiEndpoint;
+    const model =
+      (root.querySelector("#ruozhi-model") as HTMLInputElement)?.value ??
+      config.model;
     const testStatus = root.querySelector("#ruozhi-test-status") as HTMLElement;
-    if (!apiKey) {
+    if (needsAuth && !apiKey) {
       if (testStatus) {
         testStatus.textContent = "请先填写 API Key";
         testStatus.style.color = COLOR.amber;
@@ -991,9 +1073,14 @@ function bindPanelEvents(
       testStatus.textContent = "测试中…";
       testStatus.style.color = COLOR.secondary;
     }
-    const ok = await testAPIConnection({ ...config, apiKey });
+    const ok = await testAPIConnection({
+      ...config,
+      apiKey,
+      apiEndpoint,
+      model,
+    });
     if (testStatus) {
-      testStatus.textContent = ok ? "✓ 连接成功" : "✗ 连接失败";
+      testStatus.textContent = ok ? "连接成功" : "连接失败";
       testStatus.style.color = ok ? COLOR.green : COLOR.red;
     }
   });
@@ -1875,7 +1962,6 @@ function rptBtnHover(): Record<string, string> {
 
 function rptBtnDone(): Record<string, string> {
   return {
-    ...blBtnDone(),
     color: COLOR.green,
     borderColor: COLOR.greenBg,
     background: COLOR.greenBg,

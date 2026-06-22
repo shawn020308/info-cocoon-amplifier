@@ -37,6 +37,10 @@ const IGNORE_TEXTS = new Set([
   "复制评论链接",
   "加入黑名单",
   "记笔记",
+  // UP主可见的操作按钮文本（不应混入评论内容发送给AI）
+  "设为置顶",
+  "删除",
+  "设置屏蔽词",
 ]);
 
 /** 需要过滤的时间/数字模式 */
@@ -88,6 +92,9 @@ export function extractComment(el: Element): PendingComment | null {
           cls.includes("operation") ||
           cls.includes("btn") ||
           cls.includes("action") ||
+          cls.includes("pin") ||
+          cls.includes("shield") ||
+          cls.includes("up-") ||
           tag === "button"
         )
           continue;

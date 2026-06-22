@@ -42,6 +42,13 @@ export function getConfig(): FilterConfig {
       if (parsed.fontScale === undefined) {
         parsed.fontScale = 1.0;
       }
+      // 迁移：旧版无 apiKeys，将旧 apiKey 存入当前 provider 的槽位
+      if (!parsed.apiKeys || Object.keys(parsed.apiKeys).length === 0) {
+        parsed.apiKeys = {};
+        if (parsed.apiKey) {
+          parsed.apiKeys[parsed.provider || "deepseek"] = parsed.apiKey;
+        }
+      }
       // ★ 关键修复：始终合并 DEFAULT_CONFIG，确保新增字段不会为 undefined
       const merged: FilterConfig = { ...DEFAULT_CONFIG, ...parsed };
       setDevMode(merged.devMode);
@@ -52,6 +59,7 @@ export function getConfig(): FilterConfig {
     console.error("[ruozhi-filter]", "Config load failed:", e);
   }
   return {
+    provider: "deepseek",
     apiKey: "",
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-v4-flash",
@@ -73,6 +81,9 @@ export function getConfig(): FilterConfig {
     lastRefinedCount: 0,
     knowledgeBase: [],
     fontScale: 1.0,
+    prefilterShort: false,
+    prefilterSymbols: false,
+    prefilterEnglish: false,
   };
 }
 
