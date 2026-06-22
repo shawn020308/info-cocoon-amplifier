@@ -190,6 +190,10 @@ export interface FilterConfig {
   prefilterSymbols: boolean;
   /** 预过滤：跳过纯英文短评论（如"good""nb"），默认关闭 */
   prefilterEnglish: boolean;
+  /** [测试版] 启用推荐视频过滤 */
+  enableRcmdFilter: boolean;
+  /** [测试版] 推荐视频过滤的 Prompt，为空则复用主 Prompt */
+  rcmdPrompt: string;
 }
 
 /** AI判定结果: 单条评论的违规判定 */
@@ -293,4 +297,20 @@ export const DEFAULT_CONFIG: FilterConfig = {
   prefilterShort: false,
   prefilterSymbols: false,
   prefilterEnglish: false,
+  enableRcmdFilter: false,
+  rcmdPrompt: `判断视频标题是否具有明显煽动性、引战倾向或极端化特征。
+
+违规特征（命中其一即判定）：
+- 标题直接使用人身攻击、谩骂、污名化标签
+- 明确站队引战、煽动群体对立（性别/地域/阶层等）
+- 以偏概全传播刻板印象、简化复杂议题为二元对立
+- 标题本身即为仇恨言论或歧视性表述
+
+不判定为违规：
+- 客观陈述、新闻报道式标题
+- 科普、辟谣、理性讨论
+- 标题含争议性话题但立场中立、探讨性质
+- 反讽、引用式标题（需判断作者意图是否为批判）
+
+仅输出明显具有引战/煽动意图的标题，边界案例倾向于放过。`,
 };

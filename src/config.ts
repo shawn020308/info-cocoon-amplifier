@@ -61,6 +61,7 @@ export function getConfig(): FilterConfig {
   return {
     provider: "deepseek",
     apiKey: "",
+    apiKeys: {},
     apiEndpoint: "https://api.deepseek.com/chat/completions",
     model: "deepseek-v4-flash",
     theme: "github",
@@ -84,6 +85,8 @@ export function getConfig(): FilterConfig {
     prefilterShort: false,
     prefilterSymbols: false,
     prefilterEnglish: false,
+    enableRcmdFilter: false,
+    rcmdPrompt: "",
   };
 }
 

@@ -782,6 +782,22 @@ function buildPanelHTML(config: FilterConfig): string {
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-english" type="checkbox" ${cb(config.prefilterEnglish)} style="accent-color:${COLOR.accent}">跳过纯英文短评（如 "good""nb"）</label></div>
     </div>
 
+    <!-- 推荐视频过滤 [测试版] -->
+    <div style="${cardStyle}">
+      <div style="${secLabel}">推荐视频过滤 <span style="font-weight:400;color:${COLOR.purple};font-size:10px;margin-left:4px">测试版</span></div>
+      <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">AI 判定右侧推荐视频列表中的标题，自动隐藏违规推荐。</div>
+      <div style="margin-bottom:8px">
+        <label style="${chkRow}">
+          <input id="ruozhi-rcmd-enable" type="checkbox" ${cb(config.enableRcmdFilter)} style="accent-color:${COLOR.purple}">
+          启用推荐视频过滤
+        </label>
+      </div>
+      <div id="ruozhi-rcmd-prompt-row" style="display:${config.enableRcmdFilter ? "" : "none"}">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">Prompt（留空则复用上方的过滤规则）</div>
+        <textarea id="ruozhi-rcmd-prompt" rows="4" style="${is};resize:vertical;line-height:1.5">${esc(config.rcmdPrompt)}</textarea>
+      </div>
+    </div>
+
     <!-- 操作区 -->
     <div style="padding-top:8px;margin-top:12px">
       <button id="ruozhi-save" style="width:100%;padding:10px;border:none;border-radius:6px;background:${COLOR.accent};color:${COLOR.textOnAccent};font-size:14px;font-weight:600;cursor:pointer;font-family:${FONT};margin-bottom:8px">保存设置</button>
@@ -995,10 +1011,27 @@ function bindPanelEvents(
       prefilterEnglish:
         (root.querySelector("#ruozhi-prefilter-english") as HTMLInputElement)
           ?.checked ?? false,
+      enableRcmdFilter:
+        (root.querySelector("#ruozhi-rcmd-enable") as HTMLInputElement)
+          ?.checked ?? false,
+      rcmdPrompt:
+        (root.querySelector("#ruozhi-rcmd-prompt") as HTMLTextAreaElement)
+          ?.value ?? "",
     };
     saveConfig(newConfig);
     onConfigChange(newConfig);
     showPanelStatus(root, "已保存", COLOR.green);
+  });
+
+  // 推荐视频过滤开关联动
+  root.querySelector("#ruozhi-rcmd-enable")?.addEventListener("change", () => {
+    const checked = (
+      root.querySelector("#ruozhi-rcmd-enable") as HTMLInputElement
+    )?.checked;
+    const promptRow = root.querySelector(
+      "#ruozhi-rcmd-prompt-row",
+    ) as HTMLElement;
+    if (promptRow) promptRow.style.display = checked ? "" : "none";
   });
 
   // 黑名单开关联动
