@@ -183,16 +183,13 @@ export async function batchJudge(
     userMessage,
     isRefining,
   );
+  log(TAG, "请求体:", JSON.stringify(reqBody));
   log(
     TAG,
-    "请求体:",
-    JSON.stringify({
-      ...reqBody,
-      systemPrompt:
-        systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
-      userMessage: JSON.parse(userMessage),
-    }),
+    "System Prompt (前500字):",
+    systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
   );
+  log(TAG, "User Message:", JSON.parse(userMessage));
 
   // 构建索引→rpid 映射表
   const rpidByIndex = new Map(replies.map((r, i) => [i, r.rpid]));

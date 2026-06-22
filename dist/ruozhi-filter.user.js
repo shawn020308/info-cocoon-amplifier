@@ -551,15 +551,13 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       userMessage,
       isRefining
     );
+    log(TAG$7, "请求体:", JSON.stringify(reqBody));
     log(
       TAG$7,
-      "请求体:",
-      JSON.stringify({
-        ...reqBody,
-        systemPrompt: systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : ""),
-        userMessage: JSON.parse(userMessage)
-      })
+      "System Prompt (前500字):",
+      systemPrompt.slice(0, 500) + (systemPrompt.length > 500 ? "..." : "")
     );
+    log(TAG$7, "User Message:", JSON.parse(userMessage));
     const rpidByIndex = new Map(replies.map((r, i) => [i, r.rpid]));
     const fetchStart = Date.now();
     const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
