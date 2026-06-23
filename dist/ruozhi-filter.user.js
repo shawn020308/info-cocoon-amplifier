@@ -102,6 +102,7 @@
     prefilterShort: false,
     prefilterSymbols: false,
     prefilterEnglish: false,
+    prefilterAtOnly: true,
     enableRcmdFilter: false,
     rcmdPrompt: `判断视频标题是否具有明显煽动性、引战倾向或极端化特征。
 
@@ -196,6 +197,7 @@
       prefilterShort: false,
       prefilterSymbols: false,
       prefilterEnglish: false,
+      prefilterAtOnly: true,
       enableRcmdFilter: false,
       rcmdPrompt: ""
     };
@@ -1969,9 +1971,13 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   let batchTimer = null;
   const scannedRpids = /* @__PURE__ */ new Set();
   let isFlushing = false;
+  function isAtOnlyComment(message) {
+    const stripped = message.replace(/@[\u4e00-\u9fff\w\-]+/g, "").trim();
+    return stripped.length === 0;
+  }
   function skipAI(info) {
     const config = getConfig();
-    if (!config.prefilterShort && !config.prefilterSymbols && !config.prefilterEnglish) {
+    if (!config.prefilterShort && !config.prefilterSymbols && !config.prefilterEnglish && !config.prefilterAtOnly) {
       return false;
     }
     const msg = info.message.trim();
@@ -1981,6 +1987,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       return true;
     if (config.prefilterEnglish && /^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8)
       return true;
+    if (config.prefilterAtOnly && isAtOnlyComment(msg)) return true;
     return false;
   }
   function scanPage() {
@@ -2043,6 +2050,22 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
           ruozhiStats.severityCounts[cached.severity] = (ruozhiStats.severityCounts[cached.severity] ?? 0) + 1;
           return;
         }
+      }
+      if (config.prefilterAtOnly && isAtOnlyComment(info.message)) {
+        scannedRpids.add(info.rpid);
+        found++;
+        if (config.foldMode === "none") hideEl(info.el);
+        else
+          foldEl(
+            info.el,
+            info,
+            { reason: "[呼朋引伴] 纯@提及，无实质内容", severity: "low" },
+            config.foldMode
+          );
+        ruozhiStats.totalFiltered++;
+        ruozhiStats.totalScanned++;
+        ruozhiStats.severityCounts["low"] = (ruozhiStats.severityCounts["low"] ?? 0) + 1;
+        return;
       }
       if (scannedRpids.has(info.rpid)) return;
       scannedRpids.add(info.rpid);
@@ -2776,6 +2799,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-english" type="checkbox" ${cb(config.prefilterEnglish)} style="accent-color:${COLOR.accent}">跳过纯英文短评（如 "good""nb"）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-atonly" type="checkbox" ${cb(config.prefilterAtOnly)} style="accent-color:${COLOR.accent}">折叠纯@呼朋引伴（如 "@张三 @李四"）</label></div>
     </div>
 
     <!-- 推荐视频过滤 [测试版] -->
@@ -2900,7 +2924,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       });
     });
     (_b = root.querySelector("#ruozhi-save")) == null ? void 0 : _b.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
       let storedConfig = {};
       try {
         storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
@@ -2942,8 +2966,9 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         prefilterShort: ((_t = root.querySelector("#ruozhi-prefilter-short")) == null ? void 0 : _t.checked) ?? false,
         prefilterSymbols: ((_u = root.querySelector("#ruozhi-prefilter-symbols")) == null ? void 0 : _u.checked) ?? false,
         prefilterEnglish: ((_v = root.querySelector("#ruozhi-prefilter-english")) == null ? void 0 : _v.checked) ?? false,
-        enableRcmdFilter: ((_w = root.querySelector("#ruozhi-rcmd-enable")) == null ? void 0 : _w.checked) ?? false,
-        rcmdPrompt: ((_x = root.querySelector("#ruozhi-rcmd-prompt")) == null ? void 0 : _x.value) ?? ""
+        prefilterAtOnly: ((_w = root.querySelector("#ruozhi-prefilter-atonly")) == null ? void 0 : _w.checked) ?? true,
+        enableRcmdFilter: ((_x = root.querySelector("#ruozhi-rcmd-enable")) == null ? void 0 : _x.checked) ?? false,
+        rcmdPrompt: ((_y = root.querySelector("#ruozhi-rcmd-prompt")) == null ? void 0 : _y.value) ?? ""
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -3566,6 +3591,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
             return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
   onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
 ></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
+<div style="margin-bottom:4px;font-size:10px;color:${COLOR.muted}">${esc(verdict.reason)}</div>
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
         }
       })();

@@ -85,6 +85,7 @@ export function getConfig(): FilterConfig {
     prefilterShort: false,
     prefilterSymbols: false,
     prefilterEnglish: false,
+    prefilterAtOnly: true,
     enableRcmdFilter: false,
     rcmdPrompt: "",
   };

@@ -26,14 +26,21 @@ let isFlushing = false;
 
 // ── 本地预过滤：跳过明显无需 AI 判断的低价值评论 ──
 
+/** 检测是否为纯@呼朋引伴评论（如 "@张三 @李四"，无实质内容） */
+function isAtOnlyComment(message: string): boolean {
+  const stripped = message.replace(/@[\u4e00-\u9fff\w\-]+/g, "").trim();
+  return stripped.length === 0;
+}
+
 /** 预过滤：根据配置决定是否跳过（不需要AI判定） */
 function skipAI(info: PendingComment): boolean {
   const config = getConfig();
-  // 三项预过滤全部关闭时，不做任何跳过
+  // 四项预过滤全部关闭时，不做任何跳过
   if (
     !config.prefilterShort &&
     !config.prefilterSymbols &&
-    !config.prefilterEnglish
+    !config.prefilterEnglish &&
+    !config.prefilterAtOnly
   ) {
     return false;
   }
@@ -51,6 +58,8 @@ function skipAI(info: PendingComment): boolean {
   // 纯英文简单评论（如 "good"、"nice"、"nb"）
   if (config.prefilterEnglish && /^[a-zA-Z\s!~]+$/.test(msg) && msg.length < 8)
     return true;
+  // 纯@呼朋引伴（如 "@张三 @李四"），跳过AI并直接折叠
+  if (config.prefilterAtOnly && isAtOnlyComment(msg)) return true;
   return false;
 }
 
@@ -134,6 +143,25 @@ function scanPage(): void {
           (ruozhiStats.severityCounts[cached.severity] ?? 0) + 1;
         return;
       }
+    }
+
+    // ★ 快速路径：纯@呼朋引伴评论，直接折叠，节省AI token
+    if (config.prefilterAtOnly && isAtOnlyComment(info.message)) {
+      scannedRpids.add(info.rpid);
+      found++;
+      if (config.foldMode === "none") hideEl(info.el);
+      else
+        foldEl(
+          info.el,
+          info,
+          { reason: "[呼朋引伴] 纯@提及，无实质内容", severity: "low" },
+          config.foldMode,
+        );
+      ruozhiStats.totalFiltered++;
+      ruozhiStats.totalScanned++;
+      ruozhiStats.severityCounts["low"] =
+        (ruozhiStats.severityCounts["low"] ?? 0) + 1;
+      return;
     }
 
     // 已经扫描过且未命中黑名单/缓存 → 跳过，避免重复加入 pendingBatch

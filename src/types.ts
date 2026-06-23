@@ -190,6 +190,8 @@ export interface FilterConfig {
   prefilterSymbols: boolean;
   /** 预过滤：跳过纯英文短评论（如"good""nb"），默认关闭 */
   prefilterEnglish: boolean;
+  /** 预过滤：折叠纯@呼朋引伴评论（如"@张三 @李四"），默认开启 */
+  prefilterAtOnly: boolean;
   /** [测试版] 启用推荐视频过滤 */
   enableRcmdFilter: boolean;
   /** [测试版] 推荐视频过滤的 Prompt，为空则复用主 Prompt */
@@ -297,6 +299,7 @@ export const DEFAULT_CONFIG: FilterConfig = {
   prefilterShort: false,
   prefilterSymbols: false,
   prefilterEnglish: false,
+  prefilterAtOnly: true,
   enableRcmdFilter: false,
   rcmdPrompt: `判断视频标题是否具有明显煽动性、引战倾向或极端化特征。
 

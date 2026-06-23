@@ -780,6 +780,7 @@ function buildPanelHTML(config: FilterConfig): string {
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-short" type="checkbox" ${cb(config.prefilterShort)} style="accent-color:${COLOR.accent}">跳过极短评论（如 "哈""嗯"，&lt;3字符）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-symbols" type="checkbox" ${cb(config.prefilterSymbols)} style="accent-color:${COLOR.accent}">跳过纯符号/表情（如 "666""😂"）</label></div>
       <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-english" type="checkbox" ${cb(config.prefilterEnglish)} style="accent-color:${COLOR.accent}">跳过纯英文短评（如 "good""nb"）</label></div>
+      <div style="margin-bottom:4px"><label style="${subChkRow}"><input id="ruozhi-prefilter-atonly" type="checkbox" ${cb(config.prefilterAtOnly)} style="accent-color:${COLOR.accent}">折叠纯@呼朋引伴（如 "@张三 @李四"）</label></div>
     </div>
 
     <!-- 推荐视频过滤 [测试版] -->
@@ -1011,6 +1012,9 @@ function bindPanelEvents(
       prefilterEnglish:
         (root.querySelector("#ruozhi-prefilter-english") as HTMLInputElement)
           ?.checked ?? false,
+      prefilterAtOnly:
+        (root.querySelector("#ruozhi-prefilter-atonly") as HTMLInputElement)
+          ?.checked ?? true,
       enableRcmdFilter:
         (root.querySelector("#ruozhi-rcmd-enable") as HTMLInputElement)
           ?.checked ?? false,
@@ -1829,6 +1833,7 @@ export function foldEl(
           return `<div class="ruozhi-folded" style="height:15px;background:${COLOR.surface};border-left:4px solid ${accent};margin:1px 0;cursor:pointer;user-select:none;border-radius:0 2px 2px 0;transition:opacity .15s"
   onmouseenter="this.style.opacity='0.6'" onmouseleave="this.style.opacity='1'"
 ></div><div class="ruozhi-original" style="display:none;padding:6px 8px;background:${COLOR.surface};border-left:3px solid ${COLOR.border};margin:0 0 4px 0;font-size:12px;color:${COLOR.secondary};font-family:${FONT}">
+<div style="margin-bottom:4px;font-size:10px;color:${COLOR.muted}">${esc(verdict.reason)}</div>
 <div style="color:${COLOR.secondary};white-space:pre-wrap;word-break:break-word">${esc(info.message)}</div>${reportBtnsHTML}</div>`;
       }
     })();
