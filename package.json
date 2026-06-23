@@ -1,6 +1,6 @@
 {
   "name": "ruozhi-filter",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "信息茧房放大器 - B站评论AI过滤器",
   "private": true,
   "type": "module",
