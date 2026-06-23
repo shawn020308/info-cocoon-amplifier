@@ -28,7 +28,13 @@ let isFlushing = false;
 
 /** 检测是否为纯@呼朋引伴评论（如 "@张三 @李四"，无实质内容） */
 function isAtOnlyComment(message: string): boolean {
-  const stripped = message.replace(/@[\u4e00-\u9fff\w\-]+/g, "").trim();
+  // 匹配B站 @用户名: 允许中日韩文字、假名、韩文、字母数字、下划线、连字符
+  const stripped = message
+    .replace(
+      /@[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\w\-]+/g,
+      "",
+    )
+    .trim();
   return stripped.length === 0;
 }
 

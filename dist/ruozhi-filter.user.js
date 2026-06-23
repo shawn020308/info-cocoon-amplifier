@@ -655,8 +655,8 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       const data = await response.json();
       const content = (_c = (_b = (_a = data.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content;
       const usage = data.usage;
-      console.log(TAG$7, "DeepSeek 返回内容:", content);
-      console.log(TAG$7, "DeepSeek 用量:", usage);
+      log(TAG$7, "DeepSeek 返回内容:", content);
+      log(TAG$7, "DeepSeek 用量:", usage);
       if (!content) {
         warn(TAG$7, " AI 返回空内容");
         return { verdicts: [], usage };
@@ -1038,6 +1038,54 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       return isIteratorProp(target, prop) || oldTraps.has(target, prop);
     }
   }));
+  function strHash(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
+    }
+    return h;
+  }
+  function getCommentRoot() {
+    const bc = document.querySelector("bili-comments");
+    if (bc && bc.shadowRoot) return bc.shadowRoot;
+    if (bc) return bc;
+    const containerSelectors = [
+      "#comment",
+      "#commentapp",
+      ".comment-container",
+      ".reply-list",
+      ".bb-comment"
+    ];
+    for (const sel of containerSelectors) {
+      const el = document.querySelector(sel);
+      if (el && el.querySelectorAll("*").length > 5) return el;
+    }
+    return null;
+  }
+  function findCommentElements(root) {
+    var _a;
+    let items = root.querySelectorAll("bili-comment-thread-renderer");
+    if (items.length > 0) return items;
+    items = root.querySelectorAll("[data-rpid]");
+    if (items.length > 0) return items;
+    items = root.querySelectorAll(
+      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment"
+    );
+    if (items.length > 0) return items;
+    const divs = root.querySelectorAll("div");
+    if (divs.length > 500) return [];
+    const candidates = [];
+    for (const d of divs) {
+      if (candidates.length >= 100) break;
+      const childCount = d.querySelectorAll("*").length;
+      if (childCount < 3 || childCount > 80) continue;
+      const t = ((_a = d.innerText) == null ? void 0 : _a.trim()) ?? "";
+      if (t.length < 30 || t.length > 5e3) continue;
+      if (!t.includes("回复") || !t.includes("举报")) continue;
+      candidates.push(d);
+    }
+    return candidates;
+  }
   const DB_NAME = "ruozhi-filter-db";
   const DB_VERSION = 4;
   let dbPromise = null;
@@ -1084,19 +1132,12 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     }
     return dbPromise;
   }
-  function strHash$1(s) {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) {
-      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
-    }
-    return h;
-  }
   function blacklistKey(uname) {
-    return strHash$1(uname.trim());
+    return strHash(uname.trim());
   }
   function commentHash(message, mid) {
     const input = `${mid}:${message.trim().slice(0, 200)}`;
-    return strHash$1(input).toString(16);
+    return strHash(input).toString(16);
   }
   function isBlacklistedSync(mid, uname) {
     if (mid > 0) {
@@ -1555,54 +1596,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       location.pathname.match(/\/video\/(BV\w+)/);
     }
   }
-  function strHash(s) {
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) {
-      h = (h << 5) + h + s.charCodeAt(i) & 2147483647;
-    }
-    return h;
-  }
-  function getCommentRoot() {
-    const bc = document.querySelector("bili-comments");
-    if (bc && bc.shadowRoot) return bc.shadowRoot;
-    if (bc) return bc;
-    const containerSelectors = [
-      "#comment",
-      "#commentapp",
-      ".comment-container",
-      ".reply-list",
-      ".bb-comment"
-    ];
-    for (const sel of containerSelectors) {
-      const el = document.querySelector(sel);
-      if (el && el.querySelectorAll("*").length > 5) return el;
-    }
-    return null;
-  }
-  function findCommentElements(root) {
-    var _a;
-    let items = root.querySelectorAll("bili-comment-thread-renderer");
-    if (items.length > 0) return items;
-    items = root.querySelectorAll("[data-rpid]");
-    if (items.length > 0) return items;
-    items = root.querySelectorAll(
-      ".reply-item, .comment-item, .comment-list > div, .reply-wrap, bb-comment"
-    );
-    if (items.length > 0) return items;
-    const divs = root.querySelectorAll("div");
-    if (divs.length > 500) return [];
-    const candidates = [];
-    for (const d of divs) {
-      if (candidates.length >= 100) break;
-      const childCount = d.querySelectorAll("*").length;
-      if (childCount < 3 || childCount > 80) continue;
-      const t = ((_a = d.innerText) == null ? void 0 : _a.trim()) ?? "";
-      if (t.length < 30 || t.length > 5e3) continue;
-      if (!t.includes("回复") || !t.includes("举报")) continue;
-      candidates.push(d);
-    }
-    return candidates;
-  }
   const IGNORE_TEXTS = /* @__PURE__ */ new Set([
     "回复",
     "举报",
@@ -1729,7 +1722,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (uname !== "未知用户" && message.startsWith(uname)) {
         message = message.slice(uname.length).trim();
       }
-      if (!message || message.length < 1) return null;
+      if (!message) return null;
       return { el, rpid, mid, uname, message };
     } catch (e) {
       warn("[ruozhi-filter]", "  extractComment 异常:", e);
@@ -1974,7 +1967,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   const scannedRpids = /* @__PURE__ */ new Set();
   let isFlushing = false;
   function isAtOnlyComment(message) {
-    const stripped = message.replace(/@[\u4e00-\u9fff\w\-]+/g, "").trim();
+    const stripped = message.replace(
+      /@[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af\w\-]+/g,
+      ""
+    ).trim();
     return stripped.length === 0;
   }
   function skipAI(info) {
@@ -4102,6 +4098,7 @@ ${prompt}
       try {
         const cached = await getCache(hash);
         if (cached) {
+          ruozhiStats.totalScanned++;
           if (cached.violation) {
             card.el.style.display = "none";
             ruozhiStats.totalFiltered++;
