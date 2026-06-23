@@ -366,6 +366,7 @@ async function doScan(): Promise<void> {
     try {
       const cached = await getCache(hash);
       if (cached) {
+        ruozhiStats.totalScanned++;
         if (cached.violation) {
           (card.el as HTMLElement).style.display = "none";
           ruozhiStats.totalFiltered++;

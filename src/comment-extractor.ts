@@ -213,7 +213,7 @@ export function extractComment(el: Element): PendingComment | null {
       message = message.slice(uname.length).trim();
     }
     // ★ 只拒绝完全空的消息，单字评论（如"区"）应能被提取并交给AI判定
-    if (!message || message.length < 1) return null;
+    if (!message) return null;
 
     return { el, rpid, mid, uname, message };
   } catch (e) {

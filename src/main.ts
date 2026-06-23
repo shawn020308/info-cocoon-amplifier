@@ -21,6 +21,7 @@ import {
   onVideoNavigate,
 } from "./rcmd-filter";
 
+// ruozhi = Robust User Optimized Zero-Hate Interface
 const TAG = "[ruozhi-filter]";
 
 async function main(): Promise<void> {

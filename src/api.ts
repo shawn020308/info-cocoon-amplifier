@@ -261,8 +261,8 @@ export async function batchJudge(
     const content = data.choices?.[0]?.message?.content;
     const usage = data.usage;
 
-    console.log(TAG, "DeepSeek 返回内容:", content);
-    console.log(TAG, "DeepSeek 用量:", usage);
+    log(TAG, "DeepSeek 返回内容:", content);
+    log(TAG, "DeepSeek 用量:", usage);
 
     if (!content) {
       warn(TAG, " AI 返回空内容");

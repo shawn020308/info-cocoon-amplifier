@@ -5,6 +5,7 @@
 import { openDB, type IDBPDatabase } from "idb";
 import type { BlacklistRecord, CacheEntry } from "./types";
 import { log } from "./debug";
+import { strHash } from "./dom-utils";
 
 const DB_NAME = "ruozhi-filter-db";
 const DB_VERSION = 4;
@@ -24,60 +25,51 @@ let memoryCacheReady = false;
 
 function getDB(): Promise<IDBPDatabase> {
   if (!dbPromise) {
-   dbPromise = openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
-      if (oldVersion < 1) {
-       if (!db.objectStoreNames.contains("blacklist")) {
-        const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
-        bl.createIndex("timestamp", "timestamp");
-        bl.createIndex("severity", "severity");
-       }
-      }
-      if (oldVersion < 2) {
-       // v2: 改用 username hash 作为key，先删旧表重建
-       if (db.objectStoreNames.contains("blacklist")) {
-        db.deleteObjectStore("blacklist");
-       }
-       const bl = db.createObjectStore("blacklist", {
-        keyPath: "uid",
-       });
-       bl.createIndex("timestamp", "timestamp");
-       bl.createIndex("severity", "severity");
-      }
-      if (oldVersion < 3) {
-       // v3: 添加 source 字段 (manual/auto)，旧数据默认为 auto
-       // 新字段自动兼容，无需重建store
-      }
-      if (oldVersion < 4) {
-       // v4: 改回 mid 作为主键 (username hash 不稳定，用户可改名)
-       if (db.objectStoreNames.contains("blacklist")) {
-        db.deleteObjectStore("blacklist");
-       }
-       const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
-       bl.createIndex("timestamp", "timestamp");
-       bl.createIndex("severity", "severity");
-       bl.createIndex("uid", "uid");
-      }
-      if (!db.objectStoreNames.contains("cache")) {
-       const c = db.createObjectStore("cache", { keyPath: "hash" });
-       c.createIndex("timestamp", "timestamp");
-      }
-    },
-   });
+    dbPromise = openDB(DB_NAME, DB_VERSION, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          if (!db.objectStoreNames.contains("blacklist")) {
+            const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
+            bl.createIndex("timestamp", "timestamp");
+            bl.createIndex("severity", "severity");
+          }
+        }
+        if (oldVersion < 2) {
+          // v2: 改用 username hash 作为key，先删旧表重建
+          if (db.objectStoreNames.contains("blacklist")) {
+            db.deleteObjectStore("blacklist");
+          }
+          const bl = db.createObjectStore("blacklist", {
+            keyPath: "uid",
+          });
+          bl.createIndex("timestamp", "timestamp");
+          bl.createIndex("severity", "severity");
+        }
+        if (oldVersion < 3) {
+          // v3: 添加 source 字段 (manual/auto)，旧数据默认为 auto
+          // 新字段自动兼容，无需重建store
+        }
+        if (oldVersion < 4) {
+          // v4: 改回 mid 作为主键 (username hash 不稳定，用户可改名)
+          if (db.objectStoreNames.contains("blacklist")) {
+            db.deleteObjectStore("blacklist");
+          }
+          const bl = db.createObjectStore("blacklist", { keyPath: "mid" });
+          bl.createIndex("timestamp", "timestamp");
+          bl.createIndex("severity", "severity");
+          bl.createIndex("uid", "uid");
+        }
+        if (!db.objectStoreNames.contains("cache")) {
+          const c = db.createObjectStore("cache", { keyPath: "hash" });
+          c.createIndex("timestamp", "timestamp");
+        }
+      },
+    });
   }
   return dbPromise;
 }
 
 // ---------- 工具 ----------
-
-/** 简单字符串 hash (djb2) */
-function strHash(s: string): number {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-   h = ((h << 5) + h + s.charCodeAt(i)) & 0x7fffffff;
-  }
-  return h;
-}
 
 /** 根据用户名生成黑名单key */
 export function blacklistKey(uname: string): number {
@@ -98,8 +90,8 @@ export function isBlacklistedSync(
   uname: string,
 ): BlacklistRecord | null {
   if (mid > 0) {
-   const record = blByMid.get(mid);
-   if (record) return record;
+    const record = blByMid.get(mid);
+    if (record) return record;
   }
   const uid = blacklistKey(uname);
   return blByUid.get(uid) ?? null;
@@ -122,12 +114,12 @@ export async function isBlacklisted(
   const db = await getDB();
   // 优先用 mid（B站UID唯一且稳定）
   if (mid > 0) {
-   const record = await db.get("blacklist", mid);
-   if (record) return record;
+    const record = await db.get("blacklist", mid);
+    if (record) return record;
   }
   // fallback: username hash (mid为0时)
   return (
-   (await db.getFromIndex("blacklist", "uid", blacklistKey(uname))) ?? null
+    (await db.getFromIndex("blacklist", "uid", blacklistKey(uname))) ?? null
   );
 }
 
@@ -141,8 +133,8 @@ export async function addToBlacklist(record: BlacklistRecord): Promise<void> {
   await db.put("blacklist", entry);
   // 同步更新内存
   if (memoryCacheReady) {
-   blByMid.set(key, entry);
-   blByUid.set(uid, entry);
+    blByMid.set(key, entry);
+    blByUid.set(uid, entry);
   }
 }
 
@@ -158,8 +150,8 @@ export async function removeFromBlacklist(mid: number): Promise<void> {
   // 同步删除内存
   const record = blByMid.get(mid);
   if (record) {
-   blByMid.delete(mid);
-   if (record.uid) blByUid.delete(record.uid);
+    blByMid.delete(mid);
+    if (record.uid) blByUid.delete(record.uid);
   }
   await db.delete("blacklist", mid);
 }
@@ -185,19 +177,19 @@ export async function getCache(hash: string): Promise<CacheEntry | null> {
   // 优先查内存
   const mem = cacheByHash.get(hash);
   if (mem) {
-   if (Date.now() - mem.timestamp > 24 * 60 * 60 * 1000) {
-    cacheByHash.delete(hash);
-    return null;
-   }
-   return mem;
+    if (Date.now() - mem.timestamp > 24 * 60 * 60 * 1000) {
+      cacheByHash.delete(hash);
+      return null;
+    }
+    return mem;
   }
 
   const db = await getDB();
   const entry = await db.get("cache", hash);
   if (!entry) return null;
   if (Date.now() - entry.timestamp > 24 * 60 * 60 * 1000) {
-   await db.delete("cache", hash);
-   return null;
+    await db.delete("cache", hash);
+    return null;
   }
   return entry;
 }
@@ -208,13 +200,13 @@ export async function setCache(entry: CacheEntry): Promise<void> {
   await db.put("cache", entry);
   // 同步更新内存（LRU: 超过上限时删除最旧的）
   if (memoryCacheReady) {
-   cacheByHash.set(entry.hash, entry);
-   if (cacheByHash.size > 3000) {
-    const oldest = [...cacheByHash.entries()].sort(
-      (a, b) => a[1].timestamp - b[1].timestamp,
-    )[0];
-    if (oldest) cacheByHash.delete(oldest[0]);
-   }
+    cacheByHash.set(entry.hash, entry);
+    if (cacheByHash.size > 3000) {
+      const oldest = [...cacheByHash.entries()].sort(
+        (a, b) => a[1].timestamp - b[1].timestamp,
+      )[0];
+      if (oldest) cacheByHash.delete(oldest[0]);
+    }
   }
 }
 
@@ -239,17 +231,17 @@ export async function pruneCache(): Promise<void> {
   const now = Date.now();
   const expiry = 24 * 60 * 60 * 1000;
   for (const [hash, entry] of cacheByHash) {
-   if (now - entry.timestamp > expiry) cacheByHash.delete(hash);
+    if (now - entry.timestamp > expiry) cacheByHash.delete(hash);
   }
   // 截断到 3000
   if (cacheByHash.size > 3000) {
-   const sorted = [...cacheByHash.entries()].sort(
-    (a, b) => b[1].timestamp - a[1].timestamp,
-   );
-   cacheByHash.clear();
-   for (const [hash, entry] of sorted.slice(0, 3000)) {
-    cacheByHash.set(hash, entry);
-   }
+    const sorted = [...cacheByHash.entries()].sort(
+      (a, b) => b[1].timestamp - a[1].timestamp,
+    );
+    cacheByHash.clear();
+    for (const [hash, entry] of sorted.slice(0, 3000)) {
+      cacheByHash.set(hash, entry);
+    }
   }
 
   const all = await db.getAll("cache");
@@ -259,7 +251,7 @@ export async function pruneCache(): Promise<void> {
   const toDelete = all.filter((e) => !keepHashes.has(e.hash));
   const tx = db.transaction("cache", "readwrite");
   for (const entry of toDelete) {
-   await tx.store.delete(entry.hash);
+    await tx.store.delete(entry.hash);
   }
   await tx.done;
 }
@@ -270,30 +262,30 @@ export async function pruneCache(): Promise<void> {
 export async function initMemoryCache(): Promise<void> {
   if (memoryCacheReady) return;
   try {
-   const db = await getDB();
-   const allBL = await db.getAll("blacklist");
-   for (const record of allBL) {
-    blByMid.set(record.mid, record);
-    if (record.uid) blByUid.set(record.uid, record);
-   }
-
-   const allCache = await db.getAll("cache");
-   const now = Date.now();
-   const expiry = 24 * 60 * 60 * 1000;
-   allCache.sort((a, b) => b.timestamp - a.timestamp);
-   for (const entry of allCache.slice(0, 3000)) {
-    if (now - entry.timestamp <= expiry) {
-      cacheByHash.set(entry.hash, entry);
+    const db = await getDB();
+    const allBL = await db.getAll("blacklist");
+    for (const record of allBL) {
+      blByMid.set(record.mid, record);
+      if (record.uid) blByUid.set(record.uid, record);
     }
-   }
 
-   memoryCacheReady = true;
-   log(
-    "[ruozhi-filter]",
-    `Memory cache ready: 黑名单=${blByMid.size}条, 缓存=${cacheByHash.size}条`,
-   );
+    const allCache = await db.getAll("cache");
+    const now = Date.now();
+    const expiry = 24 * 60 * 60 * 1000;
+    allCache.sort((a, b) => b.timestamp - a.timestamp);
+    for (const entry of allCache.slice(0, 3000)) {
+      if (now - entry.timestamp <= expiry) {
+        cacheByHash.set(entry.hash, entry);
+      }
+    }
+
+    memoryCacheReady = true;
+    log(
+      "[ruozhi-filter]",
+      `Memory cache ready: 黑名单=${blByMid.size}条, 缓存=${cacheByHash.size}条`,
+    );
   } catch (err) {
-   console.error("[ruozhi-filter]", "Memory cache init failed:", err);
-   // 失败不阻塞，走 IndexedDB 降级路径
+    console.error("[ruozhi-filter]", "Memory cache init failed:", err);
+    // 失败不阻塞，走 IndexedDB 降级路径
   }
 }
