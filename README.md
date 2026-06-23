@@ -12,7 +12,7 @@
 
 ## 这是什么
 
-一个帮你过滤 B 站评论区的浏览器脚本。
+一个帮你过滤 B 站评论区的浏览器脚本——灵感来自**清洁印度运动** (Swachh Bharat Abhiyan)。
 
 接 DeepSeek API，AI 逐条判定评论是否违规。违规的折叠起来——想看的点开，不想看的就当不存在。
 
@@ -79,7 +79,7 @@ TypeScript · Vite · vite-plugin-monkey · IndexedDB (idb) · DeepSeek API
 
 ## 贡献者
 
-感谢以下开发者对本项目的支持与贡献！：
+感谢以下开发者对本项目的支持与贡献！
 
 <a href="https://github.com/YifanHere">
   <img src="https://github.com/YifanHere.png" width="50" height="50" style="border-radius:50%" alt="YifanHere"/>
