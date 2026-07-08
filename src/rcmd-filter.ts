@@ -11,6 +11,7 @@ import { getConfig } from "./config";
 import { log, warn } from "./debug";
 import { getCache, setCache } from "./db";
 import { ruozhiStats, saveStats, notifyStatsUpdate } from "./stats";
+import { gmFetch } from "./gm-fetch";
 
 const TAG = "[ruozhi-filter/rcmd]";
 
@@ -114,9 +115,7 @@ async function judgeCards(
 
   log(TAG, `判定 ${cards.length} 个推荐视频标题`);
 
-  const fetcher: typeof fetch = (
-    typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
-  ) as typeof fetch;
+  const fetcher = gmFetch;
 
   const hdrs: Record<string, string> = {
     "Content-Type": "application/json",

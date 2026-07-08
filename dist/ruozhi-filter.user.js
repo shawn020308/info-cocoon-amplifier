@@ -8,9 +8,11 @@
 // @downloadURL  https://update.greasyfork.org/scripts/583755/%E4%BF%A1%E6%81%AF%E8%8C%A7%E6%88%BF%E6%94%BE%E5%A4%A7%E5%99%A8%20-%20B%E7%AB%99%E9%99%8D%E6%99%BA%E8%AF%84%E8%AE%BA%E8%BF%87%E6%BB%A4%E5%99%A8.user.js
 // @updateURL    https://update.greasyfork.org/scripts/583755/%E4%BF%A1%E6%81%AF%E8%8C%A7%E6%88%BF%E6%94%BE%E5%A4%A7%E5%99%A8%20-%20B%E7%AB%99%E9%99%8D%E6%99%BA%E8%AF%84%E8%AE%BA%E8%BF%87%E6%BB%A4%E5%99%A8.meta.js
 // @match        *://www.bilibili.com/video/*
+// @connect      *
 // @grant        GM_deleteValue
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // ==/UserScript==
 
@@ -218,7 +220,7 @@
     if (ctx.videoTitle) currentContext.videoTitle = ctx.videoTitle;
     if (ctx.videoDesc) currentContext.videoDesc = ctx.videoDesc;
   }
-  const TAG$8 = "[ruozhi-filter]";
+  const TAG$9 = "[ruozhi-filter]";
   const MAX_CORRECTIONS = 500;
   const REFINE_THRESHOLD = 20;
   const MAX_PROFILE_LENGTH = 2e3;
@@ -252,7 +254,7 @@
       const newSinceLast = config.learningCorrections.length - (config.lastRefinedCount ?? 0);
       persist(config);
       log(
-        TAG$8,
+        TAG$9,
         `学习记录: ${entry.type} | 总${config.learningCorrections.length}条 | 新${newSinceLast}条 | 画像${config.learnedProfile ? "✓" : "✗"}`
       );
       if (newSinceLast >= REFINE_THRESHOLD && refineCallback && !refining) {
@@ -262,7 +264,7 @@
         });
       }
     } catch (err) {
-      console.warn(TAG$8, " 学习记录失败:", err);
+      console.warn(TAG$9, " 学习记录失败:", err);
     }
   }
   function buildLearningPrompt() {
@@ -384,11 +386,11 @@ ${truncated.join("\n")}
       config.lastRefinedCount = ((_a = config.learningCorrections) == null ? void 0 : _a.length) ?? 0;
       persist(config);
       log(
-        TAG$8,
+        TAG$9,
         ` 画像已更新 (${trimmed.length}字) | 已处理${config.lastRefinedCount}条 | 新画像: ${trimmed.slice(0, 80)}…`
       );
     } catch (err) {
-      console.warn(TAG$8, " 画像保存失败:", err);
+      console.warn(TAG$9, " 画像保存失败:", err);
     }
   }
   function persist(config) {
@@ -397,10 +399,10 @@ ${truncated.join("\n")}
       GM_setValue("ruozhi-config", json);
       const verify = GM_getValue("ruozhi-config", "");
       if (!verify || verify.length < 10) {
-        console.error(TAG$8, "Persistence verification failed: 写入后读取为空");
+        console.error(TAG$9, "Persistence verification failed: 写入后读取为空");
       }
     } catch (e) {
-      console.error(TAG$8, "Persistence failed:", e);
+      console.error(TAG$9, "Persistence failed:", e);
     }
   }
   function getLearnedProfile() {
@@ -468,6 +470,68 @@ ${truncated.join("\n")}
       persist(config);
     } catch {
     }
+  }
+  const TAG$8 = "[ruozhi-filter/gm-fetch]";
+  async function gmFetch(url, init) {
+    if (typeof GM_xmlhttpRequest !== "undefined") {
+      return gmFetchWithXhr(url, init);
+    }
+    if (typeof unsafeWindow !== "undefined") {
+      log(TAG$8, "GM_xmlhttpRequest 不可用，回退 unsafeWindow.fetch");
+      return unsafeWindow.fetch(url, init);
+    }
+    return fetch(url, init);
+  }
+  function gmFetchWithXhr(url, init) {
+    return new Promise((resolve, reject) => {
+      const method = (init == null ? void 0 : init.method) ?? "GET";
+      const headers = (init == null ? void 0 : init.headers) ?? {};
+      const body = init == null ? void 0 : init.body;
+      GM_xmlhttpRequest({
+        url,
+        method,
+        headers,
+        data: body,
+        responseType: "",
+        onload: (resp) => {
+          const parsedHeaders = parseResponseHeaders(resp.responseHeaders);
+          resolve(
+            new Response(resp.responseText, {
+              status: resp.status,
+              statusText: resp.statusText,
+              headers: parsedHeaders
+            })
+          );
+        },
+        onerror: (resp) => {
+          reject(
+            new Error(
+              `GM_xmlhttpRequest 失败: ${resp.status} ${resp.statusText}`
+            )
+          );
+        },
+        ontimeout: () => {
+          reject(new Error("GM_xmlhttpRequest 超时"));
+        },
+        timeout: 6e4
+      });
+    });
+  }
+  function parseResponseHeaders(raw) {
+    const headers = new Headers();
+    if (!raw) return headers;
+    const pairs = raw.split("\r\n");
+    for (const pair of pairs) {
+      const idx = pair.indexOf(":");
+      if (idx > 0) {
+        const key = pair.slice(0, idx).trim();
+        const val = pair.slice(idx + 1).trim();
+        if (key && val) {
+          headers.append(key, val);
+        }
+      }
+    }
+    return headers;
   }
   const TAG$7 = "[ruozhi-filter]";
   function getPreset(config) {
@@ -629,7 +693,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     log(TAG$7, "User Message:", JSON.parse(userMessage));
     const rpidByIndex = new Map(replies.map((r, i) => [i, r.rpid]));
     const fetchStart = Date.now();
-    const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+    const fetcher = gmFetch;
     try {
       const headers = {
         "Content-Type": "application/json"
@@ -690,7 +754,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   }
   async function testAPIConnection(config) {
     try {
-      const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+      const fetcher = gmFetch;
       const hdrs = {
         "Content-Type": "application/json"
       };
@@ -749,7 +813,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       TAG$7,
       `${force ? "强制" : "自动"}画像更新中... (指令${instruction.length}字)`
     );
-    const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+    const fetcher = gmFetch;
     const reqBody = buildRefineBody(config, instruction);
     log(
       TAG$7,
@@ -3899,7 +3963,7 @@ ${prompt}
     const systemPrompt = buildSystemPrompt(config);
     const userMessage = buildUserMessage(cards);
     log(TAG$1, `判定 ${cards.length} 个推荐视频标题`);
-    const fetcher = typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch;
+    const fetcher = gmFetch;
     const hdrs = {
       "Content-Type": "application/json"
     };

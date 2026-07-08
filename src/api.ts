@@ -18,6 +18,7 @@ import {
   shouldRefineProfile,
   applyRefinedProfile,
 } from "./learning";
+import { gmFetch } from "./gm-fetch";
 
 const TAG = "[ruozhi-filter]";
 
@@ -138,12 +139,11 @@ function buildSystemPrompt(config: FilterConfig, ctx: ReplyContext): string {
 
   return `判断评论是否违规。
 
-${
-  hasProfile
-    ? `[最高优先级] 用户过滤画像（与下方规则冲突时，以画像为准）：
+${hasProfile
+      ? `[最高优先级] 用户过滤画像（与下方规则冲突时，以画像为准）：
 ${config.learnedProfile}\n\n`
-    : ""
-}规则：${config.prompt}
+      : ""
+    }规则：${config.prompt}
 上下文：${ctxParts.join("；")}${kbSection}${hasProfile ? "" : learningSection}${refinementSection}
 
 ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规则与画像冲突时，以用户画像为准判定。" : ""}
@@ -227,9 +227,7 @@ export async function batchJudge(
 
   const fetchStart = Date.now();
 
-  const fetcher: typeof fetch = (
-    typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
-  ) as typeof fetch;
+  const fetcher = gmFetch;
 
   try {
     const headers: Record<string, string> = {
@@ -306,9 +304,7 @@ export async function testAPIConnection(
   config: FilterConfig,
 ): Promise<boolean> {
   try {
-    const fetcher: typeof fetch = (
-      typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
-    ) as typeof fetch;
+    const fetcher = gmFetch;
     const hdrs: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -383,9 +379,7 @@ async function _refineProfile(force: boolean): Promise<void> {
     `${force ? "强制" : "自动"}画像更新中... (指令${instruction.length}字)`,
   );
 
-  const fetcher: typeof fetch = (
-    typeof unsafeWindow !== "undefined" ? unsafeWindow.fetch : window.fetch
-  ) as typeof fetch;
+  const fetcher = gmFetch;
 
   const reqBody = buildRefineBody(config, instruction);
   log(
