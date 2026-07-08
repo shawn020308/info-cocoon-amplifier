@@ -73,6 +73,7 @@ export type ProviderName =
   | "openai"
   | "openrouter"
   | "groq"
+  | "opencode-go"
   | "ollama"
   | "vllm"
   | "custom";
@@ -114,6 +115,13 @@ export const PROVIDER_PRESETS: Record<ProviderName, ProviderPreset> = {
     label: "Groq",
     endpoint: "https://api.groq.com/openai/v1/chat/completions",
     model: "llama-3.3-70b-versatile",
+    needsAuth: true,
+    supportsJsonFormat: true,
+  },
+  "opencode-go": {
+    label: "OpenCode Go",
+    endpoint: "https://opencode.ai/zen/go/v1/chat/completions",
+    model: "deepseek-v4-flash",
     needsAuth: true,
     supportsJsonFormat: true,
   },

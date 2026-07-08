@@ -46,6 +46,13 @@
       needsAuth: true,
       supportsJsonFormat: true
     },
+    "opencode-go": {
+      label: "OpenCode Go",
+      endpoint: "https://opencode.ai/zen/go/v1/chat/completions",
+      model: "deepseek-v4-flash",
+      needsAuth: true,
+      supportsJsonFormat: true
+    },
     ollama: {
       label: "Ollama (本地)",
       endpoint: "http://localhost:11434/v1/chat/completions",
