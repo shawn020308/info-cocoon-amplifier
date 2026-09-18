@@ -8,7 +8,7 @@ export default defineConfig({
       userscript: {
         name: "信息茧房放大器 - B站降智评论过滤器",
         namespace: "ruozhi-filter",
-        version: "0.6.0",
+        version: "0.4.3",
         description: "AI驱动：自动识别并折叠B站评论区中的降智/引战言论",
         author: "ruozhi-filter",
         match: ["*://www.bilibili.com/video/*", "*://www.bilibili.com/list/*"],
@@ -24,6 +24,7 @@ export default defineConfig({
           "opencode.ai",
           "localhost",
           "127.0.0.1",
+          "api.bilibili.com",
         ],
         license: "MIT",
         updateURL:

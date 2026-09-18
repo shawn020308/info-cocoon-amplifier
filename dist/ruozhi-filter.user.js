@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         信息茧房放大器 - B站降智评论过滤器
 // @namespace    ruozhi-filter
-// @version      0.6.0
+// @version      0.4.3
 // @author       ruozhi-filter
 // @description  AI驱动：自动识别并折叠B站评论区中的降智/引战言论
 // @license      MIT
@@ -16,6 +16,7 @@
 // @connect      opencode.ai
 // @connect      localhost
 // @connect      127.0.0.1
+// @connect      api.bilibili.com
 // @grant        GM_deleteValue
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -148,7 +149,10 @@ JSON 输出严格规则（必须严格遵守）：
 - 标题含争议性话题但立场中立、探讨性质
 - 反讽、引用式标题（需判断作者意图是否为批判）
 
-仅输出明显具有引战/煽动意图的标题，边界案例倾向于放过。`
+仅输出明显具有引战/煽动意图的标题，边界案例倾向于放过。`,
+    syncBlockMode: "off",
+    syncBlockSeverities: ["high", "block"],
+    syncUnblock: false
   };
   let _devMode = false;
   function setDevMode(v) {
@@ -457,21 +461,6 @@ ${truncated.join("\n")}
         }
         persist(config);
       }
-    } catch {
-    }
-  }
-  function updateLearningReason(index, reason) {
-    try {
-      const config = getConfig();
-      if (!Array.isArray(config.learningCorrections)) return;
-      if (index < 0 || index >= config.learningCorrections.length) return;
-      const trimmed = reason.trim().slice(0, 200);
-      if (trimmed) {
-        config.learningCorrections[index].userReason = trimmed;
-      } else {
-        delete config.learningCorrections[index].userReason;
-      }
-      persist(config);
     } catch {
     }
   }
@@ -1535,6 +1524,106 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     }
     return candidates;
   }
+  async function syncBlockToBilibili(mid) {
+    if (!mid || mid <= 0) return;
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+    if (!csrfMatch) {
+      console.warn("[ruozhi-filter] 未找到 bili_jct，可能未登录 B 站，跳过同步拉黑");
+      return;
+    }
+    const csrf = csrfMatch[1];
+    const body = `fid=${mid}&act=5&re_src=11&csrf=${csrf}`;
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        url: "https://api.bilibili.com/x/relation/modify",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Origin": "https://space.bilibili.com",
+          "Referer": "https://space.bilibili.com"
+        },
+        data: body,
+        onload: (res) => {
+          try {
+            const json = JSON.parse(res.responseText);
+            if (json.code === 0) {
+              console.log(`[ruozhi-filter] 已同步拉黑 UID ${mid} 到 B 站`);
+            } else {
+              console.warn(`[ruozhi-filter] 同步拉黑失败: ${json.code} ${json.message}`);
+            }
+          } catch {
+            console.warn("[ruozhi-filter] 同步拉黑响应解析失败");
+          }
+          resolve();
+        },
+        onerror: () => {
+          console.warn("[ruozhi-filter] 同步拉黑请求出错");
+          resolve();
+        }
+      });
+    });
+  }
+  async function syncUnblockFromBilibili(mid) {
+    if (!mid || mid <= 0) return;
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+    if (!csrfMatch) {
+      console.warn("[ruozhi-filter] 未找到 bili_jct，可能未登录 B 站，跳过同步解除");
+      return;
+    }
+    const csrf = csrfMatch[1];
+    const body = `fid=${mid}&act=6&re_src=11&csrf=${csrf}`;
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        url: "https://api.bilibili.com/x/relation/modify",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Origin": "https://space.bilibili.com",
+          "Referer": "https://space.bilibili.com"
+        },
+        data: body,
+        onload: (res) => {
+          try {
+            const json = JSON.parse(res.responseText);
+            if (json.code === 0) {
+              console.log(`[ruozhi-filter] 已同步解除 B站拉黑 UID ${mid}`);
+            } else {
+              console.warn(`[ruozhi-filter] 同步解除失败: ${json.code} ${json.message}`);
+            }
+          } catch {
+            console.warn("[ruozhi-filter] 同步解除响应解析失败");
+          }
+          resolve();
+        },
+        onerror: () => {
+          console.warn("[ruozhi-filter] 同步解除请求出错");
+          resolve();
+        }
+      });
+    });
+  }
+  function shouldSyncToBilibili(severity, source) {
+    try {
+      const config = getConfig();
+      const mode = config.syncBlockMode ?? "off";
+      if (mode === "off") return false;
+      if (source === "manual") return true;
+      if (mode === "manual") return false;
+      if (mode === "strict") return severity !== "none";
+      const list = config.syncBlockSeverities ?? ["high", "block"];
+      return list.includes(severity);
+    } catch {
+      return false;
+    }
+  }
+  function shouldSyncUnblock() {
+    try {
+      const config = getConfig();
+      return config.syncUnblock === true;
+    } catch {
+      return false;
+    }
+  }
   const DB_NAME = "ruozhi-filter-db";
   const DB_VERSION = 4;
   let dbPromise = null;
@@ -2273,6 +2362,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
                 source: "auto"
               });
               newBlacklistEntries++;
+            }
+            if (reply && reply.mid > 0 && shouldSyncToBilibili(v.severity, "auto")) {
+              syncBlockToBilibili(reply.mid).catch(() => {
+              });
             }
           }
         }
@@ -3147,7 +3240,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       <div style="margin-bottom:10px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">接口地址</div>
         <input id="ruozhi-endpoint" type="text" value="${escapeAttr(config.apiEndpoint)}" style="${is}">
-        <div style="font-size:11px;color:${COLOR.muted};margin-top:5px;line-height:1.5">使用自定义 provider 时，首次请求会提示你将其域名加入脚本的 @connect 列表。</div>
       </div>
       <div style="margin-bottom:8px">
         <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">Token 单价 (¥ / 百万)</div>
@@ -3227,6 +3319,37 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
           启用自我学习
         </label>
         <div style="margin-top:3px;margin-left:24px;font-size:11px;color:${COLOR.muted}">基于你的纠正行为自动优化判定策略</div>
+      </div>
+    </div>
+
+        <!-- B站黑名单同步 -->
+    <div style="${cardStyle}">
+      <div style="${secLabel}">B站黑名单同步</div>
+      <div style="font-size:12px;color:${COLOR.muted};margin-bottom:10px">将本地拉黑同步到 B站账号黑名单，实现跨平台生效。</div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:4px">同步模式</div>
+        <select id="ruozhi-sync-mode" style="${is}">
+          <option value="off" ${sel(config.syncBlockMode, "off")} style="${opt}">关闭 — 不自动同步到 B站</option>
+          <option value="manual" ${sel(config.syncBlockMode, "manual")} style="${opt}">手动 — 仅手动拉黑时同步</option>
+          <option value="auto" ${sel(config.syncBlockMode, "auto")} style="${opt}">自动 — AI 判定达到指定等级时同步</option>
+          <option value="strict" ${sel(config.syncBlockMode, "strict")} style="${opt}">极严格 — 任何 AI 判定违规都同步</option>
+        </select>
+      </div>
+      <div id="ruozhi-sync-severities-row" style="display:${config.syncBlockMode === "auto" ? "" : "none"}">
+        <div style="font-size:12px;color:${COLOR.secondary};margin-bottom:6px">触发同步的等级（可多选）</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <label style="${subChkRow}"><input type="checkbox" class="ruozhi-sync-sev" value="low" ${(config.syncBlockSeverities ?? []).includes("low") ? "checked" : ""} style="accent-color:${COLOR.accent}">轻微</label>
+          <label style="${subChkRow}"><input type="checkbox" class="ruozhi-sync-sev" value="medium" ${(config.syncBlockSeverities ?? []).includes("medium") ? "checked" : ""} style="accent-color:${COLOR.accent}">违规</label>
+          <label style="${subChkRow}"><input type="checkbox" class="ruozhi-sync-sev" value="high" ${(config.syncBlockSeverities ?? []).includes("high") ? "checked" : ""} style="accent-color:${COLOR.accent}">严重</label>
+          <label style="${subChkRow}"><input type="checkbox" class="ruozhi-sync-sev" value="block" ${(config.syncBlockSeverities ?? []).includes("block") ? "checked" : ""} style="accent-color:${COLOR.accent}">拉黑</label>
+        </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid ${COLOR.border}">
+        <label style="${chkRow}">
+          <input id="ruozhi-sync-unblock" type="checkbox" ${cb(config.syncUnblock ?? false)} style="accent-color:${COLOR.accent}">
+          取消拉黑时同步解除 B站拉黑
+        </label>
+        <div style="font-size:11px;color:${COLOR.muted};margin-left:24px;margin-top:2px">仅在手动点击「取消拉黑」或黑名单列表「移除」时生效，默认关闭</div>
+      </div>
       </div>
     </div>
 
@@ -3325,7 +3448,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
 </div>`;
   }
   function bindPanelEvents(root, config, onConfigChange) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
     const tabs = root.querySelectorAll(".ruozhi-tab");
     (_a = root.querySelector("#ruozhi-panel-close")) == null ? void 0 : _a.addEventListener("click", () => {
       if (panelRoot) {
@@ -3376,7 +3499,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       });
     });
     (_b = root.querySelector("#ruozhi-save")) == null ? void 0 : _b.addEventListener("click", () => {
-      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
+      var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k2, _l2, _m2, _n2, _o2, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _A;
       let storedConfig = {};
       try {
         storedConfig = JSON.parse(GM_getValue("ruozhi-config", "{}"));
@@ -3408,7 +3531,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         pricePerMToken: parseFloat(
           ((_n2 = root.querySelector("#ruozhi-price")) == null ? void 0 : _n2.value) || "1.1"
         ) || 1.1,
-        sendUname: ((_o = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _o.checked) ?? false,
+        sendUname: ((_o2 = root.querySelector("#ruozhi-send-uname")) == null ? void 0 : _o2.checked) ?? false,
         sendMid: ((_p = root.querySelector("#ruozhi-send-mid")) == null ? void 0 : _p.checked) ?? false,
         sendVideoDesc: ((_q = root.querySelector("#ruozhi-send-videodesc")) == null ? void 0 : _q.checked) ?? false,
         learningEnabled: ((_r = root.querySelector("#ruozhi-learning")) == null ? void 0 : _r.checked) ?? true,
@@ -3420,7 +3543,12 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         prefilterEnglish: ((_v = root.querySelector("#ruozhi-prefilter-english")) == null ? void 0 : _v.checked) ?? false,
         prefilterAtOnly: ((_w = root.querySelector("#ruozhi-prefilter-atonly")) == null ? void 0 : _w.checked) ?? true,
         enableRcmdFilter: ((_x = root.querySelector("#ruozhi-rcmd-enable")) == null ? void 0 : _x.checked) ?? false,
-        rcmdPrompt: ((_y = root.querySelector("#ruozhi-rcmd-prompt")) == null ? void 0 : _y.value) ?? ""
+        rcmdPrompt: ((_y = root.querySelector("#ruozhi-rcmd-prompt")) == null ? void 0 : _y.value) ?? "",
+        syncBlockMode: ((_z = root.querySelector("#ruozhi-sync-mode")) == null ? void 0 : _z.value) ?? "off",
+        syncBlockSeverities: Array.from(
+          root.querySelectorAll(".ruozhi-sync-sev:checked")
+        ).map((el) => el.value),
+        syncUnblock: ((_A = root.querySelector("#ruozhi-sync-unblock")) == null ? void 0 : _A.checked) ?? false
       };
       saveConfig(newConfig);
       onConfigChange(newConfig);
@@ -3434,7 +3562,13 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       );
       if (promptRow) promptRow.style.display = checked ? "" : "none";
     });
-    (_d = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _d.addEventListener("change", () => {
+    (_d = root.querySelector("#ruozhi-sync-mode")) == null ? void 0 : _d.addEventListener("change", () => {
+      var _a2;
+      const val = (_a2 = root.querySelector("#ruozhi-sync-mode")) == null ? void 0 : _a2.value;
+      const row = root.querySelector("#ruozhi-sync-severities-row");
+      if (row) row.style.display = val === "auto" ? "" : "none";
+    });
+    (_e = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _e.addEventListener("change", () => {
       var _a2;
       const checked = (_a2 = root.querySelector("#ruozhi-enable-bl")) == null ? void 0 : _a2.checked;
       const confirmRow = root.querySelector(
@@ -3442,7 +3576,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       );
       if (confirmRow) confirmRow.style.display = checked ? "" : "none";
     });
-    (_e = root.querySelector("#ruozhi-provider")) == null ? void 0 : _e.addEventListener("change", () => {
+    (_f = root.querySelector("#ruozhi-provider")) == null ? void 0 : _f.addEventListener("change", () => {
       var _a2;
       const val = (_a2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _a2.value;
       if (!val) return;
@@ -3462,7 +3596,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         apiKeyRow.style.display = preset.needsAuth ? "" : "none";
       }
     });
-    const initProvider = (_f = root.querySelector("#ruozhi-provider")) == null ? void 0 : _f.value;
+    const initProvider = (_g = root.querySelector("#ruozhi-provider")) == null ? void 0 : _g.value;
     if (initProvider) {
       const preset = PROVIDER_PRESETS[initProvider];
       const apiKeyRow = root.querySelector("#ruozhi-apikey-row");
@@ -3470,7 +3604,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         apiKeyRow.style.display = "none";
       }
     }
-    (_g = root.querySelector("#ruozhi-test")) == null ? void 0 : _g.addEventListener("click", async () => {
+    (_h = root.querySelector("#ruozhi-test")) == null ? void 0 : _h.addEventListener("click", async () => {
       var _a2, _b2, _c2, _d2, _e2;
       const provider = (_a2 = root.querySelector("#ruozhi-provider")) == null ? void 0 : _a2.value;
       const needsAuth = ((_b2 = PROVIDER_PRESETS[provider]) == null ? void 0 : _b2.needsAuth) ?? true;
@@ -3500,12 +3634,15 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         testStatus.style.color = ok ? COLOR.green : COLOR.red;
       }
     });
-    (_h = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _h.addEventListener("click", async () => {
+    (_i = root.querySelector("#ruozhi-clear-cache")) == null ? void 0 : _i.addEventListener("click", async () => {
       await clearCache();
       showPanelStatus(root, "缓存已清除", COLOR.green);
     });
-    (_i = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _i.addEventListener("click", async () => {
-      if (!confirm("确定清空所有黑名单记录？此操作不可撤销。")) return;
+    (_j = root.querySelector("#ruozhi-clear-bl")) == null ? void 0 : _j.addEventListener("click", async () => {
+      if (!confirm(
+        "确定清空所有本地黑名单记录？\n\n注意：此操作不会解除 B站账号的拉黑，B站黑名单不受影响。"
+      ))
+        return;
       await clearBlacklist();
       _blCache = null;
       showPanelStatus(root, "黑名单已清空", COLOR.green);
@@ -3513,7 +3650,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (blContent)
         blContent.innerHTML = `<div style="padding:24px;text-align:center;color:${COLOR.muted}">暂无黑名单记录</div>`;
     });
-    (_j = root.querySelector("#ruozhi-clear-learning")) == null ? void 0 : _j.addEventListener("click", () => {
+    (_k = root.querySelector("#ruozhi-clear-learning")) == null ? void 0 : _k.addEventListener("click", () => {
       if (!confirm("确定清除所有学习记录？此操作不可撤销。")) return;
       clearLearning();
       showPanelStatus(root, "学习记录已清除", COLOR.green);
@@ -3526,7 +3663,7 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       updateStatsPanel();
       showPanelStatus(root, "统计已重置", COLOR.green);
     });
-    (_k = root.querySelector("#ruozhi-theme")) == null ? void 0 : _k.addEventListener("change", () => {
+    (_l = root.querySelector("#ruozhi-theme")) == null ? void 0 : _l.addEventListener("change", () => {
       var _a2;
       const themeName = (_a2 = root.querySelector("#ruozhi-theme")) == null ? void 0 : _a2.value;
       if (!themeName) return;
@@ -3553,15 +3690,15 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       if (panelRoot) panelRoot.style.zoom = String(clamped);
       if (fabContainer) fabContainer.style.zoom = String(clamped);
     }
-    (_l = root.querySelector("#ruozhi-font-down")) == null ? void 0 : _l.addEventListener("click", () => {
+    (_m = root.querySelector("#ruozhi-font-down")) == null ? void 0 : _m.addEventListener("click", () => {
       const cur = parseFloat((fontLabel == null ? void 0 : fontLabel.textContent) ?? "1.0");
       applyFontScale(cur - 0.1);
     });
-    (_m = root.querySelector("#ruozhi-font-up")) == null ? void 0 : _m.addEventListener("click", () => {
+    (_n = root.querySelector("#ruozhi-font-up")) == null ? void 0 : _n.addEventListener("click", () => {
       const cur = parseFloat((fontLabel == null ? void 0 : fontLabel.textContent) ?? "1.0");
       applyFontScale(cur + 0.1);
     });
-    (_n = root.querySelector("#ruozhi-font-reset")) == null ? void 0 : _n.addEventListener("click", () => {
+    (_o = root.querySelector("#ruozhi-font-reset")) == null ? void 0 : _o.addEventListener("click", () => {
       applyFontScale(1);
     });
   }
@@ -3856,12 +3993,21 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     container.querySelectorAll(".ruozhi-remove-bl").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const mid = parseInt(btn.dataset.mid ?? "0");
-        if (mid) {
-          await removeFromBlacklist(mid);
-          _blCache = null;
-          const root = container.closest("#ruozhi-panel");
-          if (root) loadBlacklistChunk(root, 0);
+        if (!mid) return;
+        let alsoUnblockBili = false;
+        if (shouldSyncUnblock()) {
+          alsoUnblockBili = confirm(
+            "是否同时从 B站账号黑名单中解除该用户的拉黑？\n\n点「确定」= 同时解除 B站拉黑\n点「取消」= 仅删除本地记录"
+          );
         }
+        await removeFromBlacklist(mid);
+        if (alsoUnblockBili) {
+          syncUnblockFromBilibili(mid).catch(() => {
+          });
+        }
+        _blCache = null;
+        const root = container.closest("#ruozhi-panel");
+        if (root) loadBlacklistChunk(root, 0);
       });
     });
   }
@@ -3902,17 +4048,11 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       const label = typeLabel[r.type] ?? r.type;
       const color = typeColor[r.type] ?? COLOR.secondary;
       const aiReasonHTML = r.aiReason ? `<div style="font-size:11px;color:${COLOR.amber};margin-top:2px">AI 曾判定: ${esc(r.aiReason)}${r.aiSeverity ? ` (${r.aiSeverity})` : ""}</div>` : "";
-      const userReasonHTML = r.userReason ? `<div style="font-size:11px;color:${COLOR.purple};background:${COLOR.purpleBg};padding:4px 8px;border-radius:4px;margin-top:4px;line-height:1.5">用户原因: ${esc(r.userReason)}</div>` : "";
-      const editLabel = r.userReason ? "编辑原因" : "添加原因";
       return `
       <div style="padding:10px 12px;border-bottom:1px solid ${COLOR.border};font-size:13px;font-family:${FONT}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <span style="color:${color};font-weight:500;font-size:12px">${label}</span>
-          <div style="display:flex;align-items:center;gap:6px">
-            <button class="ruozhi-edit-reason" data-index="${i}"
-              style="padding:1px 6px;font-size:10px;background:none;border:1px solid ${COLOR.purple}55;border-radius:3px;color:${COLOR.purple};cursor:pointer;font-family:${FONT}">
-              ${editLabel}
-            </button>
+          <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:10px;color:${COLOR.muted}">${date}</span>
             <button class="ruozhi-remove-learning" data-index="${i}"
               style="padding:1px 6px;font-size:10px;background:none;border:1px solid ${COLOR.border};border-radius:3px;color:${COLOR.secondary};cursor:pointer;font-family:${FONT}">
@@ -3922,7 +4062,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
         </div>
         <div style="color:${COLOR.text};line-height:1.5;word-break:break-word">${esc(r.message)}</div>
         ${aiReasonHTML}
-        ${userReasonHTML}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
           <span style="font-size:10px;color:${COLOR.muted}">${esc(r.uname)}</span>
           ${r.videoTitle ? `<span style="font-size:10px;color:${COLOR.muted}">${esc(r.videoTitle.slice(0, 20))}${r.videoTitle.length > 20 ? "…" : ""}</span>` : ""}
@@ -3938,22 +4077,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
     return profileSection + rows + clearBtn;
   }
   function bindLearningEvents(container) {
-    container.querySelectorAll(".ruozhi-edit-reason").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const index = parseInt(btn.dataset.index ?? "-1");
-        if (index < 0) return;
-        const records = getLearningRecords();
-        if (index >= records.length) return;
-        const record = records[index];
-        const result = await promptEditReason(
-          record.userReason ?? "",
-          record.message
-        );
-        if (!result.saved) return;
-        updateLearningReason(index, result.reason);
-        refreshLearningPanel(container);
-      });
-    });
     container.querySelectorAll(".ruozhi-remove-learning").forEach((btn) => {
       btn.addEventListener("click", () => {
         const index = parseInt(btn.dataset.index ?? "-1");
@@ -4107,6 +4230,10 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
             const hash = commentHash(info.message, info.mid);
             await removeFromBlacklist(blRecord.mid);
             await deleteCommentFromCache(hash);
+            if (blRecord.mid > 0 && shouldSyncUnblock()) {
+              syncUnblockFromBilibili(blRecord.mid).catch(() => {
+              });
+            }
             recordLearning({
               type: "unblock",
               message: info.message,
@@ -4229,242 +4356,6 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
   function applyStyles(el, styles) {
     Object.assign(el.style, styles);
   }
-  const BLACKLIST_REASON_MAX = 200;
-  function injectBlReasonStyles() {
-    var _a;
-    (_a = document.getElementById("ruozhi-bl-reason-styles")) == null ? void 0 : _a.remove();
-    const s = document.createElement("style");
-    s.id = "ruozhi-bl-reason-styles";
-    s.textContent = `
-.ruozhi-bl-bg {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2147483647;
-  font-family: ${FONT};
-}
-.ruozhi-bl-modal {
-  background: ${COLOR.bg};
-  color: ${COLOR.text};
-  border-radius: 10px;
-  width: 420px;
-  max-width: calc(100vw - 32px);
-  padding: 18px 20px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
-}
-.ruozhi-bl-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 6px;
-  color: ${COLOR.red};
-}
-.ruozhi-bl-subtitle {
-  font-size: 13px;
-  color: ${COLOR.secondary};
-  margin-bottom: 14px;
-  line-height: 1.55;
-}
-.ruozhi-bl-field-label {
-  font-size: 12px;
-  color: ${COLOR.secondary};
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ruozhi-bl-hint {
-  font-size: 11px;
-  color: ${COLOR.muted};
-  font-weight: normal;
-}
-.ruozhi-bl-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid ${COLOR.border};
-  border-radius: 5px;
-  background: ${COLOR.surface};
-  color: ${COLOR.text};
-  font-family: ${FONT};
-  font-size: 13px;
-  line-height: 1.5;
-  resize: vertical;
-  min-height: 64px;
-  outline: none;
-  color-scheme: ${COLOR === THEMES.dark ? "dark" : "light"};
-}
-.ruozhi-bl-textarea:focus {
-  border-color: ${COLOR.accent};
-  box-shadow: 0 0 0 2px ${COLOR.accent}22;
-}
-.ruozhi-bl-counter {
-  font-size: 11px;
-  color: ${COLOR.muted};
-  text-align: right;
-  margin-top: 3px;
-  margin-bottom: 12px;
-}
-.ruozhi-bl-counter.over {
-  color: ${COLOR.red};
-}
-.ruozhi-bl-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.ruozhi-bl-btn {
-  padding: 7px 16px;
-  border-radius: 5px;
-  font-size: 13px;
-  font-family: ${FONT};
-  cursor: pointer;
-  border: 1px solid ${COLOR.border};
-  background: ${COLOR.surface};
-  color: ${COLOR.text};
-}
-.ruozhi-bl-btn:hover { filter: brightness(0.96); }
-.ruozhi-bl-btn.primary {
-  background: ${COLOR.red};
-  color: ${COLOR.textOnAccent};
-  border-color: ${COLOR.red};
-}
-.ruozhi-bl-btn.primary:hover { background: ${COLOR.red}; filter: brightness(0.92); }
-`;
-    document.head.appendChild(s);
-  }
-  function promptBlacklistReason(uname) {
-    return new Promise((resolve) => {
-      injectBlReasonStyles();
-      const bg = document.createElement("div");
-      bg.className = "ruozhi-bl-bg";
-      const safeUname = esc(uname);
-      bg.innerHTML = `
-      <div class="ruozhi-bl-modal" role="dialog" aria-modal="true">
-        <div class="ruozhi-bl-title">将用户加入黑名单</div>
-        <div class="ruozhi-bl-subtitle">
-          将 <strong>${safeUname}</strong> 加入黑名单后，该用户的所有评论将被隐藏。
-        </div>
-        <div class="ruozhi-bl-field-label">
-          <span>拉黑原因（可选 · 200字以内）</span>
-          <span class="ruozhi-bl-hint">写下来能帮助 AI 学会你的判断标准</span>
-        </div>
-        <textarea class="ruozhi-bl-textarea" maxlength="${BLACKLIST_REASON_MAX}" placeholder="比如：阴阳怪气、总是引战、杠精…" rows="3"></textarea>
-        <div class="ruozhi-bl-counter"><span class="ruozhi-bl-count">0</span>/${BLACKLIST_REASON_MAX}</div>
-        <div class="ruozhi-bl-actions">
-          <button class="ruozhi-bl-btn" data-act="cancel">取消</button>
-          <button class="ruozhi-bl-btn primary" data-act="confirm">确定拉黑</button>
-        </div>
-      </div>
-    `;
-      document.body.appendChild(bg);
-      const ta = bg.querySelector(".ruozhi-bl-textarea");
-      const counterEl = bg.querySelector(".ruozhi-bl-count");
-      const counterWrap = counterEl.parentElement;
-      const cancelBtn = bg.querySelector('[data-act="cancel"]');
-      const confirmBtn = bg.querySelector('[data-act="confirm"]');
-      setTimeout(() => ta.focus(), 0);
-      const updateCounter = () => {
-        const len = ta.value.length;
-        counterEl.textContent = String(len);
-        counterWrap.classList.toggle("over", len >= BLACKLIST_REASON_MAX);
-      };
-      ta.addEventListener("input", updateCounter);
-      updateCounter();
-      let settled = false;
-      const close = (result) => {
-        if (settled) return;
-        settled = true;
-        bg.remove();
-        resolve(result);
-      };
-      cancelBtn.addEventListener("click", () => close({ confirmed: false, reason: "" }));
-      confirmBtn.addEventListener(
-        "click",
-        () => close({ confirmed: true, reason: ta.value.trim() })
-      );
-      bg.addEventListener("click", (ev) => {
-        if (ev.target === bg) close({ confirmed: false, reason: "" });
-      });
-      ta.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") {
-          ev.preventDefault();
-          close({ confirmed: false, reason: "" });
-        } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
-          ev.preventDefault();
-          close({ confirmed: true, reason: ta.value.trim() });
-        }
-      });
-    });
-  }
-  function promptEditReason(initialReason, messagePreview) {
-    return new Promise((resolve) => {
-      injectBlReasonStyles();
-      const bg = document.createElement("div");
-      bg.className = "ruozhi-bl-bg";
-      const preview = esc(messagePreview.slice(0, 80)) + (messagePreview.length > 80 ? "…" : "");
-      const initial = esc(initialReason);
-      bg.innerHTML = `
-      <div class="ruozhi-bl-modal" role="dialog" aria-modal="true">
-        <div class="ruozhi-bl-title">编辑拉黑原因</div>
-        <div class="ruozhi-bl-subtitle">
-          「${preview}」
-        </div>
-        <div class="ruozhi-bl-field-label">
-          <span>拉黑原因（200字以内）</span>
-          <span class="ruozhi-bl-hint">留空则清除该原因</span>
-        </div>
-        <textarea class="ruozhi-bl-textarea" maxlength="${BLACKLIST_REASON_MAX}" rows="3">${initial}</textarea>
-        <div class="ruozhi-bl-counter"><span class="ruozhi-bl-count">${initialReason.length}</span>/${BLACKLIST_REASON_MAX}</div>
-        <div class="ruozhi-bl-actions">
-          <button class="ruozhi-bl-btn" data-act="cancel">取消</button>
-          <button class="ruozhi-bl-btn primary" data-act="save">保存</button>
-        </div>
-      </div>
-    `;
-      document.body.appendChild(bg);
-      const ta = bg.querySelector(".ruozhi-bl-textarea");
-      const counterEl = bg.querySelector(".ruozhi-bl-count");
-      const counterWrap = counterEl.parentElement;
-      const cancelBtn = bg.querySelector('[data-act="cancel"]');
-      const saveBtn = bg.querySelector('[data-act="save"]');
-      setTimeout(() => {
-        ta.focus();
-        ta.select();
-      }, 0);
-      const updateCounter = () => {
-        const len = ta.value.length;
-        counterEl.textContent = String(len);
-        counterWrap.classList.toggle("over", len >= BLACKLIST_REASON_MAX);
-      };
-      ta.addEventListener("input", updateCounter);
-      updateCounter();
-      let settled = false;
-      const close = (result) => {
-        if (settled) return;
-        settled = true;
-        bg.remove();
-        resolve(result);
-      };
-      cancelBtn.addEventListener("click", () => close({ saved: false, reason: "" }));
-      saveBtn.addEventListener("click", () => close({ saved: true, reason: ta.value.trim() }));
-      bg.addEventListener("click", (ev) => {
-        if (ev.target === bg) close({ saved: false, reason: "" });
-      });
-      ta.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") {
-          ev.preventDefault();
-          close({ saved: false, reason: "" });
-        } else if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
-          ev.preventDefault();
-          close({ saved: true, reason: ta.value.trim() });
-        }
-      });
-    });
-  }
   function injectManualBlacklistButton(el, info) {
     if (blacklistButtonInjected.has(el)) return;
     blacklistButtonInjected.add(el);
@@ -4485,41 +4376,43 @@ ${hasProfile ? "重要：以上用户画像优先级高于基础规则。当规�
       e.stopPropagation();
       e.preventDefault();
       const config = getConfig();
-      let userReason = "";
-      if (config.blacklistConfirm !== false) {
-        const result = await promptBlacklistReason(info.uname);
-        if (!result.confirmed) return;
-        userReason = result.reason;
+      if (config.blacklistConfirm !== false && !confirm(
+        `确定要将用户 "${info.uname}" 加入黑名单吗？
+该用户的所有评论将被隐藏。`
+      )) {
+        return;
       }
       try {
-        const storedReason = userReason ? `[手动拉黑] ${userReason}` : "[手动拉黑]";
         await addToBlacklist({
           mid: info.mid,
           uname: info.uname,
           rpid: info.rpid,
           message: info.message,
-          reason: storedReason,
+          reason: "[手动拉黑]",
           videoTitle: currentContext.videoTitle,
           videoUrl: window.location.href,
           timestamp: Date.now(),
           severity: "block",
           source: "manual"
         });
+        if (info.mid > 0 && shouldSyncToBilibili("block", "manual")) {
+          syncBlockToBilibili(info.mid).catch(() => {
+          });
+        }
         recordLearning({
           type: "manual_blacklist",
           message: info.message,
-          userReason: userReason || void 0,
           uname: info.uname,
           videoTitle: currentContext.videoTitle
         });
-        log(TAG$2, `Manual block: ${info.uname}${userReason ? ` | 原因: ${userReason}` : ""}`);
+        log(TAG$2, `Manual block: ${info.uname}`);
         if (config.foldMode === "none") {
           hideEl(el);
         } else {
           foldEl(
             el,
             info,
-            { reason: storedReason, severity: "block" },
+            { reason: "[手动拉黑]", severity: "block" },
             config.foldMode
           );
         }

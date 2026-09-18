@@ -15,6 +15,8 @@ import {
   getCache,
   setCache,
   commentHash,
+  shouldSyncToBilibili,
+  syncBlockToBilibili,
 } from "./db";
 import { batchJudge } from "./api";
 
@@ -125,23 +127,28 @@ export async function filterReplies(
           (stats.severityCounts[v.severity] ?? 0) + 1;
        }
 
-       // block 或 high 级别自动拉黑
-       if ((v.severity === "block" || v.severity === "high") && reply) {
-        log(TAG, `Auto-blocking: uid=${v.mid} ${reply.member.uname}`);
-        await addToBlacklist({
-          mid: v.mid,
-          uname: reply.member.uname,
-          rpid: v.rpid,
-          message: reply.content.message,
-          reason: v.reason,
-          videoTitle: ctx.videoTitle,
-          videoUrl: window.location.href,
-          timestamp: Date.now(),
-          severity: v.severity,
-          source: "auto",
-        });
-        newBlacklistEntries++;
-       }
+          // block 或 high 级别自动拉黑
+          if ((v.severity === "block" || v.severity === "high") && reply) {
+              log(TAG, `Auto-blocking: uid=${v.mid} ${reply.member.uname}`);
+              await addToBlacklist({
+                  mid: v.mid,
+                  uname: reply.member.uname,
+                  rpid: v.rpid,
+                  message: reply.content.message,
+                  reason: v.reason,
+                  videoTitle: ctx.videoTitle,
+                  videoUrl: window.location.href,
+                  timestamp: Date.now(),
+                  severity: v.severity,
+                  source: "auto",
+              });
+              newBlacklistEntries++;
+          }
+
+          // 同步拉黑到 B站（根据配置，独立于本地黑名单逻辑）
+          if (reply && reply.mid > 0 && shouldSyncToBilibili(v.severity, "auto")) {
+              syncBlockToBilibili(reply.mid).catch(() => { });
+          }
       }
     }
    } catch (err) {

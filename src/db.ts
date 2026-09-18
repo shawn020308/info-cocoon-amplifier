@@ -3,10 +3,140 @@
 // 性能关键: 启动时将数据加载到内存 Map，查询 O(1) 瞬间完成
 // ============================================================
 import { openDB, type IDBPDatabase } from "idb";
-import type { BlacklistRecord, CacheEntry } from "./types";
+import type { BlacklistRecord, CacheEntry, AIVerdict } from "./types";
+import { getConfig } from "./config";
 import { log } from "./debug";
 import { strHash } from "./dom-utils";
 
+/**
+ * 同步拉黑到 B 站账号黑名单
+ * @param mid 目标用户 UID
+ */
+export async function syncBlockToBilibili(mid: number): Promise<void> {
+  if (!mid || mid <= 0) return;
+
+  const csrfMatch = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+  if (!csrfMatch) {
+    console.warn("[ruozhi-filter] 未找到 bili_jct，可能未登录 B 站，跳过同步拉黑");
+    return;
+  }
+  const csrf = csrfMatch[1];
+
+  const body = `fid=${mid}&act=5&re_src=11&csrf=${csrf}`;
+
+  return new Promise((resolve) => {
+    GM_xmlhttpRequest({
+      url: "https://api.bilibili.com/x/relation/modify",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": "https://space.bilibili.com",
+        "Referer": "https://space.bilibili.com",
+      },
+      data: body,
+      onload: (res) => {
+        try {
+          const json = JSON.parse(res.responseText);
+          if (json.code === 0) {
+            console.log(`[ruozhi-filter] 已同步拉黑 UID ${mid} 到 B 站`);
+          } else {
+            console.warn(`[ruozhi-filter] 同步拉黑失败: ${json.code} ${json.message}`);
+          }
+        } catch {
+          console.warn("[ruozhi-filter] 同步拉黑响应解析失败");
+        }
+        resolve();
+      },
+      onerror: () => {
+        console.warn("[ruozhi-filter] 同步拉黑请求出错");
+        resolve();
+      },
+    });
+  });
+}
+
+/**
+ * 同步解除 B站账号黑名单中的拉黑
+ * @param mid 目标用户 UID
+ */
+export async function syncUnblockFromBilibili(mid: number): Promise<void> {
+  if (!mid || mid <= 0) return;
+
+  const csrfMatch = document.cookie.match(/(?:^|;\s*)bili_jct=([^;]+)/);
+  if (!csrfMatch) {
+    console.warn("[ruozhi-filter] 未找到 bili_jct，可能未登录 B 站，跳过同步解除");
+    return;
+  }
+  const csrf = csrfMatch[1];
+
+  const body = `fid=${mid}&act=6&re_src=11&csrf=${csrf}`;
+
+  return new Promise((resolve) => {
+    GM_xmlhttpRequest({
+      url: "https://api.bilibili.com/x/relation/modify",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": "https://space.bilibili.com",
+        "Referer": "https://space.bilibili.com",
+      },
+      data: body,
+      onload: (res) => {
+        try {
+          const json = JSON.parse(res.responseText);
+          if (json.code === 0) {
+            console.log(`[ruozhi-filter] 已同步解除 B站拉黑 UID ${mid}`);
+          } else {
+            console.warn(`[ruozhi-filter] 同步解除失败: ${json.code} ${json.message}`);
+          }
+        } catch {
+          console.warn("[ruozhi-filter] 同步解除响应解析失败");
+        }
+        resolve();
+      },
+      onerror: () => {
+        console.warn("[ruozhi-filter] 同步解除请求出错");
+        resolve();
+      },
+    });
+  });
+}
+
+/**
+ * 根据配置判断是否应该把某条拉黑记录同步到 B站
+ * @param severity 评论严重度
+ * @param source   "manual"=用户手动, "auto"=AI 自动
+ */
+export function shouldSyncToBilibili(
+  severity: AIVerdict["severity"],
+  source: "auto" | "manual",
+): boolean {
+  try {
+    const config = getConfig();
+    const mode = config.syncBlockMode ?? "off";
+
+    if (mode === "off") return false;
+
+    if (source === "manual") return true;
+
+    if (mode === "manual") return false;
+    if (mode === "strict") return severity !== "none";
+    const list = config.syncBlockSeverities ?? ["high", "block"];
+    return list.includes(severity);
+  } catch {
+    return false;
+  }
+}
+
+/** 根据配置判断是否应该同步解除 B站的拉黑 */
+export function shouldSyncUnblock(): boolean {
+    try {
+        const config = getConfig();
+        return config.syncUnblock === true;
+    } catch {
+        return false;
+    }
+}
 const DB_NAME = "ruozhi-filter-db";
 const DB_VERSION = 4;
 
